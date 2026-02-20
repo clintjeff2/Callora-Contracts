@@ -15,10 +15,18 @@ pub struct CalloraVault;
 #[contractimpl]
 impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance.
+    /// Emits an "init" event with the owner address and initial balance.
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
         let balance = initial_balance.unwrap_or(0);
-        let meta = VaultMeta { owner, balance };
+        let meta = VaultMeta { owner: owner.clone(), balance };
         env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
+
+        // Emit event: topics = (init, owner), data = balance
+        env.events().publish(
+            (Symbol::new(&env, "init"), owner),
+            balance,
+        );
+
         meta
     }
 
