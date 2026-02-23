@@ -57,9 +57,6 @@ impl CalloraVault {
         };
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
-        env.storage()
-            .instance()
             .set(&Symbol::new(&env, META_KEY), &meta);
         env.storage()
             .instance()
@@ -154,14 +151,15 @@ impl CalloraVault {
     pub fn get_meta(env: Env) -> VaultMeta {
         env.storage()
             .instance()
-            .get(&Symbol::new(&env, "meta"))
+            .get(&Symbol::new(&env, META_KEY))
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
-    /// Deposit increases balance. Callable by owner or designated depositor.
-    /// Panics if amount is below the configured minimum deposit.
-    /// Emits a "deposit" event with amount and new balance.
-    pub fn deposit(env: Env, amount: i128) -> i128 {
+    /// Deposit increases balance. Supports multiple depositors: any authorized user can deposit.
+    /// Emits a "deposit" event with the depositor address and amount.
+    pub fn deposit(env: Env, from: Address, amount: i128) -> i128 {
+        from.require_auth();
+
         let mut meta = Self::get_meta(env.clone());
         assert!(
             amount >= meta.min_deposit,
@@ -172,10 +170,12 @@ impl CalloraVault {
         meta.balance += amount;
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
+        // Emit event: topics = (deposit, from), data = amount
         env.events()
-            .publish((Symbol::new(&env, "deposit"),), (amount, meta.balance));
+            .publish((Symbol::new(&env, "deposit"), from), amount);
+
         meta.balance
     }
 
@@ -188,7 +188,7 @@ impl CalloraVault {
         meta.balance -= amount;
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         let topics = match &request_id {
             Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
@@ -237,7 +237,7 @@ impl CalloraVault {
         meta.balance = balance;
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+            .set(&Symbol::new(&env, META_KEY), &meta);
         meta.balance
     }
 
@@ -251,7 +251,7 @@ impl CalloraVault {
         meta.balance -= amount;
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         env.events().publish(
             (Symbol::new(&env, "withdraw"), meta.owner.clone()),
@@ -270,7 +270,7 @@ impl CalloraVault {
         meta.balance -= amount;
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         env.events().publish(
             (

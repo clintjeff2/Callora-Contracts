@@ -10,9 +10,9 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
 ## What’s included
 
 - **`callora-vault`** contract:
-  - `init(owner, initial_balance, min_deposit)` — initialize vault for an owner; optional minimum deposit (0 = none)
+  - `init(owner, usdc_token, initial_balance, min_deposit)` — initialize vault for an owner; optional minimum deposit (0 = none)
   - `get_meta()` — owner, current balance, and min_deposit
-  - `deposit(amount)` — increase balance (panics if amount < min_deposit)
+  - `deposit(from, amount)` — increase balance (supports multiple authorized depositors; panics if amount < min_deposit)
   - `deduct(caller, amount, request_id)` — decrease balance (e.g. per API call)
   - `batch_deduct(caller, items)` — multiple deducts in one transaction (reverts entire batch if any would exceed balance)
   - `withdraw(amount)` — owner-only; decreases balance (USDC transfer when integrated)
