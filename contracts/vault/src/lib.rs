@@ -39,7 +39,9 @@ impl CalloraVault {
     }
 
     /// Deposit increases balance. Callable by owner or designated depositor.
+    /// Requires amount > 0 to prevent no-op transactions and accidental negative flows.
     pub fn deposit(env: Env, amount: i128) -> i128 {
+        assert!(amount > 0, "deposit amount must be positive; received: {}", amount);
         let mut meta = Self::get_meta(env.clone());
         meta.balance += amount;
         env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
@@ -47,9 +49,11 @@ impl CalloraVault {
     }
 
     /// Deduct balance for an API call. Only backend/authorized caller in production.
+    /// Requires amount > 0 to prevent no-op transactions and accidental negative flows.
     pub fn deduct(env: Env, amount: i128) -> i128 {
+        assert!(amount > 0, "deduct amount must be positive; received: {}", amount);
         let mut meta = Self::get_meta(env.clone());
-        assert!(meta.balance >= amount, "insufficient balance");
+        assert!(meta.balance >= amount, "insufficient balance: {} requested but only {} available", amount, meta.balance);
         meta.balance -= amount;
         env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
         meta.balance

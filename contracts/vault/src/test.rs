@@ -52,3 +52,63 @@ fn deposit_and_deduct() {
     client.deduct(&50);
     assert_eq!(client.balance(), 250);
 }
+
+#[test]
+#[should_panic(expected = "deposit amount must be positive")]
+fn deposit_zero_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.deposit(&0);
+}
+
+#[test]
+#[should_panic(expected = "deposit amount must be positive")]
+fn deposit_negative_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.deposit(&-100);
+}
+
+#[test]
+#[should_panic(expected = "deduct amount must be positive")]
+fn deduct_zero_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.deduct(&0);
+}
+
+#[test]
+#[should_panic(expected = "deduct amount must be positive")]
+fn deduct_negative_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.deduct(&-50);
+}
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn deduct_exceeds_balance_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.deduct(&200);
+}
