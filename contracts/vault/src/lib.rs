@@ -22,14 +22,17 @@ impl CalloraVault {
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
         let balance = initial_balance.unwrap_or(0);
         assert!(balance >= 0, "initial balance must be non-negative");
-        let meta = VaultMeta { owner: owner.clone(), balance };
-        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
+        let meta = VaultMeta {
+            owner: owner.clone(),
+            balance,
+        };
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
 
         // Emit event: topics = (init, owner), data = balance
-        env.events().publish(
-            (Symbol::new(&env, "init"), owner),
-            balance,
-        );
+        env.events()
+            .publish((Symbol::new(&env, "init"), owner), balance);
 
         meta
     }
@@ -61,7 +64,9 @@ impl CalloraVault {
             .balance
             .checked_add(amount)
             .expect("deposit overflow: balance would exceed i128::MAX");
-        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
         meta.balance
     }
 
@@ -82,7 +87,9 @@ impl CalloraVault {
             .balance
             .checked_sub(amount)
             .expect("deduct underflow: balance would go below zero");
-        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
         meta.balance
     }
 
