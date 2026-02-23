@@ -15,6 +15,7 @@ pub struct DeductItem {
 pub struct VaultMeta {
     pub owner: Address,
     pub balance: i128,
+    pub authorized_caller: Option<Address>,
 }
 
 #[contract]
@@ -24,11 +25,17 @@ pub struct CalloraVault;
 impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance.
     /// Emits an "init" event with the owner address and initial balance.
-    pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
+    pub fn init(
+        env: Env,
+        owner: Address,
+        initial_balance: Option<i128>,
+        authorized_caller: Option<Address>,
+    ) -> VaultMeta {
         let balance = initial_balance.unwrap_or(0);
         let meta = VaultMeta {
             owner: owner.clone(),
             balance,
+            authorized_caller,
         };
         env.storage()
             .instance()
@@ -49,6 +56,22 @@ impl CalloraVault {
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
+    /// Set or update the authorized caller for deduction. Only callable by the vault owner.
+    pub fn set_authorized_caller(env: Env, caller: Address) {
+        let mut meta = Self::get_meta(env.clone());
+        meta.owner.require_auth();
+
+        meta.authorized_caller = Some(caller.clone());
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
+
+        env.events().publish(
+            (Symbol::new(&env, "set_auth_caller"), meta.owner.clone()),
+            caller,
+        );
+    }
+
     /// Deposit increases balance. Callable by owner or designated depositor.
     /// Emits a "deposit" event with amount and new balance.
     pub fn deposit(env: Env, amount: i128) -> i128 {
@@ -63,10 +86,21 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Deduct balance for an API call. Only backend/authorized caller in production.
+    /// Deduct balance for an API call. Only authorized caller or owner.
     /// Emits a "deduct" event with amount and new balance.
-    pub fn deduct(env: Env, amount: i128) -> i128 {
+    pub fn deduct(env: Env, caller: Address, amount: i128) -> i128 {
         let mut meta = Self::get_meta(env.clone());
+
+        // Ensure the caller corresponds to the address signing the transaction.
+        caller.require_auth();
+
+        // Check authorization: must be either the authorized_caller if set, or the owner.
+        let authorized = match &meta.authorized_caller {
+            Some(auth_caller) => caller == *auth_caller || caller == meta.owner,
+            None => caller == meta.owner,
+        };
+        assert!(authorized, "unauthorized caller");
+
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
         env.storage()
@@ -81,8 +115,19 @@ impl CalloraVault {
     /// Batch deduct: multiple (amount, optional request_id) in one transaction.
     /// Reverts the entire batch if any single deduct would exceed balance.
     /// Emits one "deduct" event per item (same shape as single deduct).
-    pub fn batch_deduct(env: Env, items: Vec<DeductItem>) -> i128 {
+    pub fn batch_deduct(env: Env, caller: Address, items: Vec<DeductItem>) -> i128 {
         let mut meta = Self::get_meta(env.clone());
+
+        // Ensure the caller corresponds to the address signing the transaction.
+        caller.require_auth();
+
+        // Check authorization: must be either the authorized_caller if set, or the owner.
+        let authorized = match &meta.authorized_caller {
+            Some(auth_caller) => caller == *auth_caller || caller == meta.owner,
+            None => caller == meta.owner,
+        };
+        assert!(authorized, "unauthorized caller");
+
         let n = items.len();
         assert!(n > 0, "batch_deduct requires at least one item");
 

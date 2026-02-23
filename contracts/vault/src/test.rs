@@ -12,7 +12,7 @@ fn init_and_balance() {
 
     // Call init directly inside as_contract so events are captured
     let events = env.as_contract(&contract_id, || {
-        CalloraVault::init(env.clone(), owner.clone(), Some(1000));
+        CalloraVault::init(env.clone(), owner.clone(), Some(1000), None);
         env.events().all()
     });
 
@@ -46,10 +46,11 @@ fn deposit_and_deduct() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &Some(100), &None);
     client.deposit(&200);
     assert_eq!(client.balance(), 300);
-    client.deduct(&50);
+    env.mock_all_auths();
+    client.deduct(&owner, &50);
     assert_eq!(client.balance(), 250);
 }
 
@@ -60,7 +61,7 @@ fn batch_deduct_success() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(1000));
+    client.init(&owner, &Some(1000), &None);
     let req1 = Symbol::new(&env, "req1");
     let req2 = Symbol::new(&env, "req2");
     let items = vec![
@@ -78,7 +79,8 @@ fn batch_deduct_success() {
             request_id: None,
         },
     ];
-    let new_balance = client.batch_deduct(&items);
+    env.mock_all_auths();
+    let new_balance = client.batch_deduct(&owner, &items);
     assert_eq!(new_balance, 650);
     assert_eq!(client.balance(), 650);
 }
@@ -91,7 +93,7 @@ fn batch_deduct_reverts_entire_batch() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &Some(100), &None);
     let items = vec![
         &env,
         DeductItem {
@@ -103,7 +105,8 @@ fn batch_deduct_reverts_entire_batch() {
             request_id: None,
         }, // total 120 > 100
     ];
-    client.batch_deduct(&items);
+    env.mock_all_auths();
+    client.batch_deduct(&owner, &items);
 }
 
 #[test]
@@ -113,7 +116,7 @@ fn withdraw_owner_success() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(500));
+    client.init(&owner, &Some(500), &None);
     env.mock_all_auths();
     let new_balance = client.withdraw(&200);
     assert_eq!(new_balance, 300);
@@ -127,7 +130,7 @@ fn withdraw_exact_balance() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &Some(100), &None);
     env.mock_all_auths();
     let new_balance = client.withdraw(&100);
     assert_eq!(new_balance, 0);
@@ -142,7 +145,7 @@ fn withdraw_exceeds_balance_fails() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(50));
+    client.init(&owner, &Some(50), &None);
     env.mock_all_auths();
     client.withdraw(&100);
 }
@@ -155,7 +158,7 @@ fn withdraw_to_success() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(500));
+    client.init(&owner, &Some(500), &None);
     env.mock_all_auths();
     let new_balance = client.withdraw_to(&to, &150);
     assert_eq!(new_balance, 350);
@@ -171,6 +174,94 @@ fn withdraw_without_auth_fails() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &Some(100), &None);
     client.withdraw(&50);
 }
+
+#[test]
+fn authorized_caller_deduct_success() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let authorized = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(1000), &Some(authorized.clone()));
+    
+    // Auth as authorized caller
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &authorized,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "deduct",
+                args: (authorized.clone(), 100i128).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+    
+    client.deduct(&authorized, &100);
+    assert_eq!(client.balance(), 900);
+}
+
+#[test]
+fn owner_can_always_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let authorized = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(1000), &Some(authorized));
+    
+    env.mock_all_auths();
+    client.deduct(&owner, &100);
+    assert_eq!(client.balance(), 900);
+}
+
+#[test]
+#[should_panic]
+fn unauthorized_caller_deduct_fails() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let authorized = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(1000), &Some(authorized));
+    
+    // Auth as attacker
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &attacker,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "deduct",
+                args: (attacker.clone(), 100i128).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+    
+    client.deduct(&attacker, &100);
+}
+
+#[test]
+fn set_authorized_caller_owner_only() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let new_auth = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(1000), &None);
+    
+    env.mock_all_auths();
+    client.set_authorized_caller(&new_auth);
+    
+    let meta = client.get_meta();
+    assert_eq!(meta.authorized_caller, Some(new_auth));
+}
+
