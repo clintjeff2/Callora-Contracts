@@ -52,3 +52,22 @@ fn deposit_and_deduct() {
     client.deduct(&50);
     assert_eq!(client.balance(), 250);
 }
+
+#[test]
+fn init_none_balance() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    // Call init with None
+    client.init(&owner, &None);
+
+    // Assert balance is 0
+    assert_eq!(client.balance(), 0);
+
+    // Assert get_meta returns correct owner and zero balance
+    let meta = client.get_meta();
+    assert_eq!(meta.owner, owner);
+    assert_eq!(meta.balance, 0);
+}
