@@ -25,6 +25,11 @@ impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance.
     /// Emits an "init" event with the owner address and initial balance.
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
+        if env.storage().instance().has(&Symbol::new(&env, "meta")) {
+            panic!("vault already initialized");
+        }
+        owner.require_auth();
+
         let balance = initial_balance.unwrap_or(0);
         let meta = VaultMeta {
             owner: owner.clone(),
