@@ -14,9 +14,12 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
   - `get_meta()` — owner and current balance
   - `deposit(amount)` — increase balance
   - `deduct(amount)` — decrease balance (e.g. per API call)
+  - `batch_deduct(items)` — multiple deducts in one transaction (reverts entire batch if any would exceed balance)
+  - `withdraw(amount)` — owner-only; decreases balance (USDC transfer when integrated)
+  - `withdraw_to(to, amount)` — owner-only; withdraw to a designated address
   - `balance()` — current balance
 
-Production use would add: USDC asset, auth (only backend or owner can deduct), and events.
+Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use.
 
 ## Local setup
 
@@ -45,7 +48,10 @@ Production use would add: USDC asset, auth (only backend or owner can deduct), a
 
 ```
 callora-contracts/
+├── .github/workflows/
+│   └── ci.yml              # CI: fmt, clippy, test, WASM build
 ├── Cargo.toml              # Workspace and release profile
+├── EVENT_SCHEMA.md         # Event names, topics, and payload types
 ├── contracts/
 │   └── vault/
 │       ├── Cargo.toml
