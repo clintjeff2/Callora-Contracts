@@ -683,6 +683,21 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
 }
 
+#[test]
+fn deduct_returns_new_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    vault.init(&owner, &usdc_address, &Some(100), &None);
+    let new_balance = vault.deduct(&owner, &30, &None);
+    assert_eq!(new_balance, 70);
+    assert_eq!(vault.balance(), 70);
+}
+
 /// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
 #[test]
 fn fuzz_deposit_and_deduct() {
