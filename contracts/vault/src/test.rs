@@ -2,7 +2,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{IntoVal, Symbol};
+use soroban_sdk::{vec, IntoVal, Symbol};
 
 #[test]
 fn init_and_balance() {
