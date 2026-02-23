@@ -41,18 +41,56 @@ Production use would add: USDC asset, auth (only backend or owner can deduct), a
 
    Or use `soroban contract build` if you use the Soroban CLI workflow.
 
+## Test coverage
+
+The project enforces a **minimum of 95 % line coverage** on every push and pull-request via GitHub Actions.
+
+### Run coverage locally
+
+```bash
+# First time only — the script auto-installs cargo-tarpaulin if absent
+./scripts/coverage.sh
+```
+
+The script will:
+
+1. Check for `cargo-tarpaulin`; install it automatically if it is missing.
+2. Run all tests with instrumentation according to `tarpaulin.toml`.
+3. Exit with a non-zero code if coverage drops below 95 %.
+4. Write reports to the `coverage/` directory (git-ignored).
+
+| Report file                      | Description                                     |
+| -------------------------------- | ----------------------------------------------- |
+| `coverage/tarpaulin-report.html` | Interactive per-file view — open in any browser |
+| `coverage/cobertura.xml`         | Cobertura XML consumed by CI                    |
+
+> **Tip:** You can also run `cargo tarpaulin` directly from the workspace root;
+> the settings in `tarpaulin.toml` are picked up automatically.
+
+### CI enforcement
+
+`.github/workflows/coverage.yml` runs on every push and pull-request.
+It installs tarpaulin, runs coverage, uploads the HTML report as a downloadable
+artefact, and posts a coverage summary table as a PR comment.
+A result below 95 % causes the workflow — and the required status check — to fail.
+
 ## Project layout
 
 ```
 callora-contracts/
-├── Cargo.toml              # Workspace and release profile
-├── contracts/
-│   └── vault/
-│       ├── Cargo.toml
-│       └── src/
-│           ├── lib.rs      # Contract logic
-│           └── test.rs     # Unit tests
-└── README.md
+├── Cargo.toml                        # Workspace and release profile
+├── tarpaulin.toml                    # cargo-tarpaulin config (≥ 95 % enforced)
+├── scripts/
+│   └── coverage.sh                   # One-command local coverage runner
+├── .github/
+│   └── workflows/
+│       └── coverage.yml              # CI: enforces 95 % on every push / PR
+└── contracts/
+    └── vault/
+        ├── Cargo.toml
+        └── src/
+            ├── lib.rs                # Contract logic
+            └── test.rs               # Unit tests (covers all code paths)
 ```
 
 ## Deployment
