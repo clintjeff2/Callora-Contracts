@@ -40,6 +40,142 @@ fn init_and_balance() {
 }
 
 #[test]
+fn owner_can_deposit() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    // Mock the owner as the invoker
+    env.mock_all_auths();
+    client.deposit(&owner, &200);
+    
+    assert_eq!(client.balance(), 300);
+}
+
+#[test]
+fn allowed_depositor_can_deposit() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    // Owner sets the allowed depositor
+    env.mock_all_auths();
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+    
+    // Depositor can now deposit
+    client.deposit(&depositor, &50);
+    assert_eq!(client.balance(), 150);
+}
+
+#[test]
+#[should_panic(expected = "unauthorized: only owner or allowed depositor can deposit")]
+fn unauthorized_address_cannot_deposit() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let _unauthorized = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    // Try to deposit as unauthorized address (should panic)
+    env.mock_all_auths();
+    let unauthorized_addr = Address::generate(&env);
+    client.deposit(&unauthorized_addr, &50);
+}
+
+#[test]
+fn owner_can_set_allowed_depositor() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    // Owner sets allowed depositor
+    env.mock_all_auths();
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+    
+    // Depositor can deposit
+    client.deposit(&depositor, &25);
+    assert_eq!(client.balance(), 125);
+}
+
+#[test]
+fn owner_can_clear_allowed_depositor() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    env.mock_all_auths();
+    
+    // Set depositor
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+    client.deposit(&depositor, &50);
+    assert_eq!(client.balance(), 150);
+    
+    // Clear depositor
+    client.set_allowed_depositor(&owner, &None);
+    
+    // Depositor can no longer deposit (would panic if attempted)
+    // Owner can still deposit
+    client.deposit(&owner, &25);
+    assert_eq!(client.balance(), 175);
+}
+
+#[test]
+#[should_panic(expected = "unauthorized: owner only")]
+fn non_owner_cannot_set_allowed_depositor() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let _non_owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    // Try to set allowed depositor as non-owner (should panic)
+    env.mock_all_auths();
+    let non_owner_addr = Address::generate(&env);
+    client.set_allowed_depositor(&non_owner_addr, &Some(depositor));
+}
+
+#[test]
+#[should_panic(expected = "unauthorized: only owner or allowed depositor can deposit")]
+fn deposit_after_depositor_cleared_is_rejected() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    
+    env.mock_all_auths();
+    
+    // Set and then clear depositor
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+    client.set_allowed_depositor(&owner, &None);
+    
+    // Depositor should no longer be able to deposit
+    client.deposit(&depositor, &50);
+}
+
+#[test]
 fn deposit_and_deduct() {
     let env = Env::default();
     let owner = Address::generate(&env);
@@ -47,8 +183,11 @@ fn deposit_and_deduct() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(100));
-    client.deposit(&200);
+    
+    env.mock_all_auths();
+    client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
+    
     client.deduct(&50);
     assert_eq!(client.balance(), 250);
 }
