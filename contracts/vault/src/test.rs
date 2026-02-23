@@ -52,3 +52,22 @@ fn deposit_and_deduct() {
     client.deduct(&50);
     assert_eq!(client.balance(), 250);
 }
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn deduct_exact_balance_and_panic() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    assert_eq!(client.balance(), 100);
+
+    // Deduct exact balance
+    client.deduct(&100);
+    assert_eq!(client.balance(), 0);
+
+    // Further deduct should panic
+    client.deduct(&1);
+}
