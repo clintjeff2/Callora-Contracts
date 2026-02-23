@@ -187,20 +187,18 @@ fn authorized_caller_deduct_success() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(1000), &Some(authorized.clone()));
-    
+
     // Auth as authorized caller
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &authorized,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &contract_id,
-                fn_name: "deduct",
-                args: (authorized.clone(), 100i128).into_val(&env),
-                sub_invokes: &[],
-            },
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &authorized,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "deduct",
+            args: (authorized.clone(), 100i128).into_val(&env),
+            sub_invokes: &[],
         },
-    ]);
-    
+    }]);
+
     client.deduct(&authorized, &100);
     assert_eq!(client.balance(), 900);
 }
@@ -214,7 +212,7 @@ fn owner_can_always_deduct() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(1000), &Some(authorized));
-    
+
     env.mock_all_auths();
     client.deduct(&owner, &100);
     assert_eq!(client.balance(), 900);
@@ -231,20 +229,18 @@ fn unauthorized_caller_deduct_fails() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(1000), &Some(authorized));
-    
+
     // Auth as attacker
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &attacker,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &contract_id,
-                fn_name: "deduct",
-                args: (attacker.clone(), 100i128).into_val(&env),
-                sub_invokes: &[],
-            },
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &attacker,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "deduct",
+            args: (attacker.clone(), 100i128).into_val(&env),
+            sub_invokes: &[],
         },
-    ]);
-    
+    }]);
+
     client.deduct(&attacker, &100);
 }
 
@@ -257,11 +253,10 @@ fn set_authorized_caller_owner_only() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(1000), &None);
-    
+
     env.mock_all_auths();
     client.set_authorized_caller(&new_auth);
-    
+
     let meta = client.get_meta();
     assert_eq!(meta.authorized_caller, Some(new_auth));
 }
-
