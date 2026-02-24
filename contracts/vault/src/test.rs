@@ -477,14 +477,13 @@ fn init_none_balance() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    // Call init with None
-    client.init(&owner, &None);
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &None, &None);
 
-    // Assert balance is 0
     assert_eq!(client.balance(), 0);
 
-    // Assert get_meta returns correct owner and zero balance
     let meta = client.get_meta();
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 0);
@@ -663,4 +662,20 @@ fn init_already_initialized_panics() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
+}
+
+#[test]
+fn owner_unchanged_after_deposit_and_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(100), &None);
+    client.deposit(&50);
+    client.deduct(&owner, &30, &None);
+
+    assert_eq!(client.get_meta().owner, owner);
 }
