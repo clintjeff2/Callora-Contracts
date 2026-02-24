@@ -9,6 +9,12 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Grant write permissions to post PR comments
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   coverage:
     name: "Cargo Test Coverage (≥ 95 %)"
