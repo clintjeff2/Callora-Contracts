@@ -93,7 +93,7 @@ fn init_and_balance() {
     let (usdc, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
     client.init(&owner, &usdc, &Some(1000), &None);
-    let events = env.events().all();
+    let _events = env.events().all();
 
     // Verify balance through client
     assert_eq!(client.balance(), 1000);
@@ -471,6 +471,7 @@ fn test_get_meta_returns_correct_values() {
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 999);
 }
+#[test]
 fn batch_deduct_success() {
     let env = Env::default();
     let owner = Address::generate(&env);
