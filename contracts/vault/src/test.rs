@@ -478,8 +478,11 @@ fn init_none_balance() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    // fixed
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    env.mock_all_auths();
     // Call init with None
-    client.init(&owner, &None);
+    client.init(&owner, &usdc_address, &None, &None);
 
     // Assert balance is 0
     assert_eq!(client.balance(), 0);
@@ -663,4 +666,19 @@ fn init_already_initialized_panics() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
+}
+
+/// Verifies that calling get_meta before init panics with "vault not initialized".
+/// This ensures the contract cannot be read in an uninitialized state,
+/// protecting against accidental use of a misconfigured vault.
+#[test]
+#[should_panic(expected = "vault not initialized")]
+fn get_meta_before_init_panics() {
+    let env = Env::default();
+
+    // Register contract
+    let (_, vault) = create_vault(&env);
+
+    // Do not call init — calling get_meta on uninitialized vault should panic immediately
+    vault.get_meta();
 }
