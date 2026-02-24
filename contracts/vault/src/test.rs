@@ -322,6 +322,117 @@ fn deduct_exact_balance_succeeds() {
 }
 
 // ---------------------------------------------------------------------------
+// deduct event / idempotency key  (Issue #51)
+// ---------------------------------------------------------------------------
+
+/// The deduct event's third topic is the request_id, enabling the backend to
+/// correlate an on-chain deduction with the originating API call.
+#[test]
+fn deduct_event_contains_request_id() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let usdc_token = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_token, &Some(500), &None);
+
+    let request_id = Symbol::new(&env, "api_call_42");
+    client.deduct(&caller, &150, &Some(request_id.clone()));
+
+    let events = env.events().all();
+    let ev = events.last().expect("expected deduct event");
+
+    let topic0: Symbol = ev.1.get(0).unwrap().into_val(&env);
+    let topic1: Address = ev.1.get(1).unwrap().into_val(&env);
+    let topic2: Symbol = ev.1.get(2).unwrap().into_val(&env);
+
+    assert_eq!(topic0, Symbol::new(&env, "deduct"));
+    assert_eq!(topic1, caller);
+    assert_eq!(topic2, request_id);
+
+    let (emitted_amount, remaining): (i128, i128) = ev.2.into_val(&env);
+    assert_eq!(emitted_amount, 150);
+    assert_eq!(remaining, 350);
+}
+
+/// When no request_id is supplied the third topic is an empty-symbol sentinel
+/// so the event schema stays consistent regardless of whether an id was given.
+#[test]
+fn deduct_event_no_request_id_uses_empty_symbol() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let usdc_token = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_token, &Some(300), &None);
+    client.deduct(&caller, &100, &None);
+
+    let events = env.events().all();
+    let ev = events.last().expect("expected deduct event");
+
+    let topic0: Symbol = ev.1.get(0).unwrap().into_val(&env);
+    let topic2: Symbol = ev.1.get(2).unwrap().into_val(&env);
+
+    assert_eq!(topic0, Symbol::new(&env, "deduct"));
+    assert_eq!(topic2, Symbol::new(&env, ""));
+}
+
+/// batch_deduct emits one event per item; each event's third topic carries the
+/// per-item request_id so the backend can correlate every individual deduction.
+#[test]
+fn batch_deduct_events_contain_request_ids() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let usdc_token = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_token, &Some(1000), &None);
+
+    let rid_a = Symbol::new(&env, "batch_a");
+    let rid_b = Symbol::new(&env, "batch_b");
+
+    let items = soroban_sdk::vec![
+        &env,
+        DeductItem {
+            amount: 200,
+            request_id: Some(rid_a.clone()),
+        },
+        DeductItem {
+            amount: 300,
+            request_id: Some(rid_b.clone()),
+        },
+    ];
+    client.batch_deduct(&caller, &items);
+
+    // batch_deduct emits one event per item; env.events().all() returns the
+    // events from this invocation only.
+    let all_events = env.events().all();
+    assert_eq!(all_events.len(), 2);
+
+    let ev_a = all_events.get(0).unwrap();
+    let ev_b = all_events.get(1).unwrap();
+
+    let req_a: Symbol = ev_a.1.get(2).unwrap().into_val(&env);
+    let req_b: Symbol = ev_b.1.get(2).unwrap().into_val(&env);
+    assert_eq!(req_a, rid_a);
+    assert_eq!(req_b, rid_b);
+
+    let (amt_a, _): (i128, i128) = ev_a.2.into_val(&env);
+    let (amt_b, _): (i128, i128) = ev_b.2.into_val(&env);
+    assert_eq!(amt_a, 200);
+    assert_eq!(amt_b, 300);
+}
+
+// ---------------------------------------------------------------------------
 // admin management
 // ---------------------------------------------------------------------------
 
