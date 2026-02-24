@@ -30,56 +30,76 @@ fn fund_vault(
     usdc_admin_client.mint(vault_address, &amount);
 }
 
-/// Logs approximate CPU/instruction and fee for init, deposit, deduct, and balance.
-/// Run with: cargo test --ignored vault_operation_costs -- --nocapture
-/// Requires invocation cost metering; may panic on default test env.
+/// Full vault lifecycle integration test: init → deposit → batch_deduct →
+/// set_admin → withdraw_to, verifying state at each step.
 #[test]
-#[ignore]
-fn vault_operation_costs() {
+fn vault_full_lifecycle() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    // Register contract instance with a unique salt (owner) to avoid address reuse
-    let contract_id = env.register(CalloraVault {}, (owner.clone(),));
+    let new_admin = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
 
-    client.init(&owner, &usdc, &Some(0), &None);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "init: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    // 1. Initialise with 500 balance and min_deposit of 10.
+    let meta = client.init(&owner, &usdc, &Some(500), &Some(10));
+    assert_eq!(meta.balance, 500);
+    assert_eq!(meta.owner, owner);
+    assert_eq!(client.balance(), 500);
+    assert_eq!(client.get_admin(), owner);
 
-    client.deposit(&100);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "deposit: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    // 2. Deposit – must be ≥ min_deposit.
+    let after_deposit = client.deposit(&200);
+    assert_eq!(after_deposit, 700);
+    assert_eq!(client.balance(), 700);
 
-    client.deduct(&owner, &50, &None);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "deduct: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    // 3. Batch deduct three items in one call.
+    let items = soroban_sdk::vec![
+        &env,
+        DeductItem {
+            amount: 100,
+            request_id: Some(Symbol::new(&env, "r1")),
+        },
+        DeductItem {
+            amount: 50,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 25,
+            request_id: Some(Symbol::new(&env, "r3")),
+        },
+    ];
+    let after_batch = client.batch_deduct(&caller, &items);
+    assert_eq!(after_batch, 525); // 700 - 175
+    assert_eq!(client.balance(), 525);
 
-    let _ = client.balance();
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "balance: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    // 4. Single deduct.
+    let after_deduct = client.deduct(&caller, &25, &Some(Symbol::new(&env, "r4")));
+    assert_eq!(after_deduct, 500);
+
+    // 5. Transfer admin to new_admin, then verify.
+    client.set_admin(&owner, &new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+
+    // 6. Withdraw to a recipient address.
+    let after_withdraw = client.withdraw_to(&recipient, &100);
+    assert_eq!(after_withdraw, 400);
+    assert_eq!(client.balance(), 400);
+
+    // 7. Direct withdraw (to owner).
+    let after_withdraw2 = client.withdraw(&50);
+    assert_eq!(after_withdraw2, 350);
+    assert_eq!(client.balance(), 350);
+
+    // 8. get_meta round-trip.
+    let final_meta = client.get_meta();
+    assert_eq!(final_meta.balance, 350);
+    assert_eq!(final_meta.owner, owner);
+    assert_eq!(final_meta.min_deposit, 10);
 }
 
 // ---------------------------------------------------------------------------
