@@ -15,6 +15,8 @@ pub struct DeductItem {
 pub struct VaultMeta {
     pub owner: Address,
     pub balance: i128,
+    /// Minimum amount required per deposit; deposits below this panic.
+    pub min_deposit: i128,
 }
 
 #[contract]
@@ -22,18 +24,26 @@ pub struct CalloraVault;
 
 #[contractimpl]
 impl CalloraVault {
-    /// Initialize vault for an owner with optional initial balance.
+    /// Initialize vault for an owner with optional initial balance and minimum deposit.
     /// Emits an "init" event with the owner address and initial balance.
-    pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
+    /// `min_deposit`: minimum amount per deposit; deposits below this will panic. Use 0 for no minimum.
+    pub fn init(
+        env: Env,
+        owner: Address,
+        initial_balance: Option<i128>,
+        min_deposit: Option<i128>,
+    ) -> VaultMeta {
         if env.storage().instance().has(&Symbol::new(&env, "meta")) {
             panic!("vault already initialized");
         }
         owner.require_auth();
 
         let balance = initial_balance.unwrap_or(0);
+        let min_deposit_val = min_deposit.unwrap_or(0);
         let meta = VaultMeta {
             owner: owner.clone(),
             balance,
+            min_deposit: min_deposit_val,
         };
         env.storage()
             .instance()
@@ -55,9 +65,16 @@ impl CalloraVault {
     }
 
     /// Deposit increases balance. Callable by owner or designated depositor.
+    /// Panics if amount is below the configured minimum deposit.
     /// Emits a "deposit" event with amount and new balance.
     pub fn deposit(env: Env, amount: i128) -> i128 {
         let mut meta = Self::get_meta(env.clone());
+        assert!(
+            amount >= meta.min_deposit,
+            "deposit below minimum: {} < {}",
+            amount,
+            meta.min_deposit
+        );
         meta.balance += amount;
         env.storage()
             .instance()

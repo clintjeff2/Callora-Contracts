@@ -22,14 +22,16 @@ The Callora Vault contract uses Soroban's instance storage to persist contract s
 #[contracttype]
 #[derive(Clone)]
 pub struct VaultMeta {
-    pub owner: Address,    // Vault owner address
-    pub balance: i128,      // Current balance (in smallest units, e.g., USDC cents)
+    pub owner: Address,      // Vault owner address
+    pub balance: i128,       // Current balance (in smallest units, e.g., USDC cents)
+    pub min_deposit: i128,   // Minimum amount per deposit; 0 means no minimum
 }
 ```
 
 **Fields:**
 - `owner`: `Address` - The address that owns the vault and can perform operations
 - `balance`: `i128` - Current vault balance, can be positive or zero
+- `min_deposit`: `i128` - Minimum amount required per deposit; deposits below this panic (0 = no minimum)
 
 ## Storage Operations
 
