@@ -50,9 +50,11 @@ impl CalloraVault {
             balance,
         };
         env.storage()
-            .instance().set(&Symbol::new(&env, "meta"), &meta);
-                env.storage()
-            .instance().set(&Symbol::new(&env, META_KEY), &meta);
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
         env.storage()
             .instance()
             .set(&Symbol::new(&env, USDC_KEY), &usdc_token);

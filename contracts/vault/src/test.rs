@@ -2,7 +2,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{token, IntoVal, Vec, Symbol};
+use soroban_sdk::{token, vec, IntoVal, Symbol};
 
 fn create_usdc<'a>(
     env: &'a Env,
@@ -332,8 +332,9 @@ fn batch_deduct_success() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(1000));
+    client.init(&owner, &usdc_address, &Some(1000));
     let req1 = Symbol::new(&env, "req1");
     let req2 = Symbol::new(&env, "req2");
     let items = vec![
@@ -363,8 +364,9 @@ fn batch_deduct_reverts_entire_batch() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100));
     let items = vec![
         &env,
         DeductItem {
@@ -385,8 +387,9 @@ fn withdraw_owner_success() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(500));
+    client.init(&owner, &usdc_address, &Some(500));
     env.mock_all_auths();
     let new_balance = client.withdraw(&200);
     assert_eq!(new_balance, 300);
@@ -399,8 +402,9 @@ fn withdraw_exact_balance() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100));
     env.mock_all_auths();
     let new_balance = client.withdraw(&100);
     assert_eq!(new_balance, 0);
@@ -414,8 +418,9 @@ fn withdraw_exceeds_balance_fails() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(50));
+    client.init(&owner, &usdc_address, &Some(50));
     env.mock_all_auths();
     client.withdraw(&100);
 }
@@ -427,8 +432,9 @@ fn withdraw_to_success() {
     let to = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(500));
+    client.init(&owner, &usdc_address, &Some(500));
     env.mock_all_auths();
     let new_balance = client.withdraw_to(&to, &150);
     assert_eq!(new_balance, 350);
@@ -443,7 +449,8 @@ fn withdraw_without_auth_fails() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    client.init(&owner, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100));
     client.withdraw(&50);
 }
