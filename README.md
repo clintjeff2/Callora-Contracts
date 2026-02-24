@@ -47,6 +47,7 @@ Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EV
 ## Development
 
 Use one branch per issue or feature (e.g. `test/minimum-deposit-rejected`, `docs/vault-gas-notes`) to keep PRs small and reduce merge conflicts. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before pushing.
+<<<<<<< HEAD
 
 ## Test coverage
 
@@ -80,6 +81,8 @@ The script will:
 It installs tarpaulin, runs coverage, uploads the HTML report as a downloadable
 artefact, and posts a coverage summary table as a PR comment.
 A result below 95 % causes the workflow — and the required status check — to fail.
+=======
+>>>>>>> b0229e42e4d4517da9f548ea3e374a5886304bf2
 
 ## Project layout
 
@@ -87,6 +90,7 @@ A result below 95 % causes the workflow — and the required status check — to
 callora-contracts/
 ├── .github/workflows/
 │   └── ci.yml              # CI: fmt, clippy, test, WASM build
+<<<<<<< HEAD
 ├── Cargo.toml                        # Workspace and release profile
 ├── BENCHMARKS.md           # Vault operation gas/cost notes
 ├── EVENT_SCHEMA.md         # Event names, topics, and payload types
@@ -103,6 +107,19 @@ callora-contracts/
         └── src/
             ├── lib.rs                # Contract logic
             └── test.rs               # Unit tests (covers all code paths)
+=======
+├── Cargo.toml              # Workspace and release profile
+├── BENCHMARKS.md           # Vault operation gas/cost notes
+├── EVENT_SCHEMA.md         # Event names, topics, and payload types
+├── UPGRADE.md              # Vault upgrade and migration path
+├── contracts/
+│   └── vault/
+│       ├── Cargo.toml
+│       └── src/
+│           ├── lib.rs      # Contract logic
+│           └── test.rs     # Unit tests
+└── README.md
+>>>>>>> b0229e42e4d4517da9f548ea3e374a5886304bf2
 ```
 
 ## Deployment
