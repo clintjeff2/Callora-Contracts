@@ -664,3 +664,58 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
 }
+
+/// Test settlement balance flow: receive payment, verify balance increase,
+/// distribute to developer, verify balance decrease and recipient received correct amount.
+///
+/// This test simulates the complete settlement flow:
+/// 1. Initialize vault (settlement contract) with USDC token
+/// 2. Receive payment by minting USDC to vault (simulates incoming payment)
+/// 3. Assert vault balance increased to expected amount
+/// 4. Distribute portion to developer address
+/// 5. Assert vault balance decreased by distributed amount
+/// 6. Assert developer received exact distributed amount
+#[test]
+fn settlement_balance_after_receive_and_distribute() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup: admin controls vault, developer receives distribution
+    let admin = Address::generate(&env);
+    let developer = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &admin);
+
+    // Initialize vault (settlement contract)
+    vault.init(&admin, &usdc_address, &None, &None);
+
+    // Step 1: Receive payment - mint 100 USDC to vault (simulates incoming payment)
+    let payment_amount = 100i128;
+    fund_vault(&env, &usdc_admin_client, &vault_address, payment_amount);
+
+    // Step 2: Assert vault balance increased to 100
+    let vault_balance_after_receive = usdc_client.balance(&vault_address);
+    assert_eq!(
+        vault_balance_after_receive, payment_amount,
+        "vault should have received payment of 100"
+    );
+
+    // Step 3: Distribute 60 to developer
+    let distribute_amount = 60i128;
+    vault.distribute(&admin, &developer, &distribute_amount);
+
+    // Step 4: Assert vault balance decreased to 40 (100 - 60)
+    let vault_balance_after_distribute = usdc_client.balance(&vault_address);
+    let expected_vault_balance = payment_amount - distribute_amount;
+    assert_eq!(
+        vault_balance_after_distribute, expected_vault_balance,
+        "vault balance should be 40 after distributing 60"
+    );
+
+    // Step 5: Assert developer received exactly 60
+    let developer_balance = usdc_client.balance(&developer);
+    assert_eq!(
+        developer_balance, distribute_amount,
+        "developer should have received 60"
+    );
+}
