@@ -68,9 +68,10 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Deduct balance for an API call. Only backend/authorized caller in production.
-    /// Emits a "deduct" event with amount and new balance.
-    pub fn deduct(env: Env, amount: i128) -> i128 {
+    /// Deduct balance for an API call. Callable by authorized caller (e.g. backend/deployer).
+    /// Emits a "deduct" event with caller, optional request_id, amount, and new balance.
+    pub fn deduct(env: Env, caller: Address, amount: i128, request_id: Option<Symbol>) -> i128 {
+        caller.require_auth();
         let mut meta = Self::get_meta(env.clone());
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
@@ -78,15 +79,23 @@ impl CalloraVault {
             .instance()
             .set(&Symbol::new(&env, "meta"), &meta);
 
-        env.events()
-            .publish((Symbol::new(&env, "deduct"),), (amount, meta.balance));
+        let topics = match &request_id {
+            Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
+            None => (
+                Symbol::new(&env, "deduct"),
+                caller.clone(),
+                Symbol::new(&env, ""),
+            ),
+        };
+        env.events().publish(topics, (amount, meta.balance));
         meta.balance
     }
 
     /// Batch deduct: multiple (amount, optional request_id) in one transaction.
     /// Reverts the entire batch if any single deduct would exceed balance.
     /// Emits one "deduct" event per item (same shape as single deduct).
-    pub fn batch_deduct(env: Env, items: Vec<DeductItem>) -> i128 {
+    pub fn batch_deduct(env: Env, caller: Address, items: Vec<DeductItem>) -> i128 {
+        caller.require_auth();
         let mut meta = Self::get_meta(env.clone());
         let n = items.len();
         assert!(n > 0, "batch_deduct requires at least one item");
@@ -104,8 +113,12 @@ impl CalloraVault {
         for item in items.iter() {
             balance -= item.amount;
             let topics = match &item.request_id {
-                Some(rid) => (Symbol::new(&env, "deduct"), rid.clone()),
-                None => (Symbol::new(&env, "deduct"), Symbol::new(&env, "")),
+                Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
+                None => (
+                    Symbol::new(&env, "deduct"),
+                    caller.clone(),
+                    Symbol::new(&env, ""),
+                ),
             };
             env.events().publish(topics, (item.amount, balance));
         }

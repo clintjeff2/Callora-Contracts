@@ -34,7 +34,8 @@ Emitted on each deduction: single `deduct(amount)` or each item in `batch_deduct
 | Field   | Location | Type   | Description   |
 |---------|----------|--------|---------------|
 | topic 0 | topics   | Symbol | `"deduct"`    |
-| topic 1 | topics   | Symbol | optional request_id (empty symbol if none) |
+| topic 1 | topics   | Address| caller        |
+| topic 2 | topics   | Symbol | optional request_id (empty symbol if none) |
 | data    | data     | (i128, i128) | (amount, new_balance) |
 
 ---

@@ -51,7 +51,8 @@ fn deposit_and_deduct() {
     client.init(&owner, &Some(100));
     client.deposit(&200);
     assert_eq!(client.balance(), 300);
-    client.deduct(&50);
+    env.mock_all_auths();
+    client.deduct(&owner, &50, &None);
     assert_eq!(client.balance(), 250);
 }
 
@@ -124,6 +125,40 @@ fn deduct_exact_balance_and_panic() {
 }
 
 #[test]
+fn deduct_event_emission() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(1000));
+
+    env.mock_all_auths();
+    let req_id = Symbol::new(&env, "req123");
+
+    // Call client directly to avoid re-entry panic inside as_contract
+    client.deduct(&caller, &200, &Some(req_id.clone()));
+
+    let events = env.events().all();
+
+    let last_event = events.last().unwrap();
+    assert_eq!(last_event.0, contract_id);
+
+    let topics = &last_event.1;
+    assert_eq!(topics.len(), 3);
+    let topic0: Symbol = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic0, Symbol::new(&env, "deduct"));
+    let topic_caller: Address = topics.get(1).unwrap().into_val(&env);
+    assert_eq!(topic_caller, caller);
+    let topic_req_id: Symbol = topics.get(2).unwrap().into_val(&env);
+    assert_eq!(topic_req_id, req_id);
+
+    let data: (i128, i128) = last_event.2.into_val(&env);
+    assert_eq!(data, (200, 800));
+}
+
+#[test]
 fn batch_deduct_success() {
     let env = Env::default();
     let owner = Address::generate(&env);
@@ -149,7 +184,9 @@ fn batch_deduct_success() {
             request_id: None,
         },
     ];
-    let new_balance = client.batch_deduct(&items);
+    let caller = Address::generate(&env);
+    env.mock_all_auths();
+    let new_balance = client.batch_deduct(&caller, &items);
     assert_eq!(new_balance, 650);
     assert_eq!(client.balance(), 650);
 }
@@ -175,7 +212,9 @@ fn batch_deduct_reverts_entire_batch() {
             request_id: None,
         }, // total 120 > 100
     ];
-    client.batch_deduct(&items);
+    let caller = Address::generate(&env);
+    env.mock_all_auths();
+    client.batch_deduct(&caller, &items);
 }
 
 #[test]
