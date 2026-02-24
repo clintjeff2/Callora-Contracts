@@ -680,3 +680,44 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
 }
+
+/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
+/// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
+#[test]
+fn fuzz_deposit_and_deduct() {
+    use rand::Rng;
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    let initial_balance: i128 = 1_000;
+    vault.init(&owner, &usdc_address, &Some(initial_balance), &None);
+    let mut expected = initial_balance;
+    let mut rng = rand::thread_rng();
+
+    for _ in 0..500 {
+        if rng.gen_bool(0.5) {
+            let amount = rng.gen_range(1..=500);
+            vault.deposit(&owner, &amount);
+            expected += amount;
+        } else if expected > 0 {
+            let amount = rng.gen_range(1..=expected.min(500));
+            vault.deduct(&owner, &amount, &None);
+            expected -= amount;
+        }
+
+        let balance = vault.balance();
+        assert!(balance >= 0, "balance went negative: {}", balance);
+        assert_eq!(
+            balance, expected,
+            "balance mismatch: got {}, expected {}",
+            balance, expected
+        );
+    }
+
+    assert_eq!(vault.balance(), expected);
+}
