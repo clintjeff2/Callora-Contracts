@@ -82,9 +82,11 @@ jobs:
       # -----------------------------------------------------------------------
       # 7. Post a brief coverage summary as a comment on the pull-request.
       #    Reads the line-rate from the generated Cobertura XML file.
+      #    continue-on-error: true handles permission issues gracefully
       # -----------------------------------------------------------------------
       - name: Post coverage summary to PR
         if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
