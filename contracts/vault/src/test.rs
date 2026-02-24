@@ -474,12 +474,14 @@ fn test_get_meta_returns_correct_values() {
 #[test]
 fn init_none_balance() {
     let env = Env::default();
+    env.mock_all_auths();
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    // Call init with None
-    client.init(&owner, &None);
+    // Call init with None balance
+    client.init(&owner, &usdc_address, &None, &None);
 
     // Assert balance is 0
     assert_eq!(client.balance(), 0);
@@ -663,4 +665,67 @@ fn init_already_initialized_panics() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
+}
+
+#[test]
+fn test_transfer_ownership() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    let (contract_id, client) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    client.init(&owner, &usdc_address, &Some(100), &None);
+
+    // transfer ownership via client
+    client.transfer_ownership(&new_owner);
+
+    let transfer_event = env
+        .events()
+        .all()
+        .into_iter()
+        .find(|e| {
+            e.0 == contract_id && {
+                let topics = &e.1;
+                if !topics.is_empty() {
+                    let topic_name: Symbol = topics.get(0).unwrap().into_val(&env);
+                    topic_name == Symbol::new(&env, "transfer_ownership")
+                } else {
+                    false
+                }
+            }
+        })
+        .expect("expected transfer event");
+
+    let topics = &transfer_event.1;
+    let topic_old_owner: Address = topics.get(1).unwrap().into_val(&env);
+    assert!(topic_old_owner == owner);
+
+    let topic_new_owner: Address = topics.get(2).unwrap().into_val(&env);
+    assert!(topic_new_owner == new_owner);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_ownership_not_owner() {
+    let env = Env::default();
+
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let _not_owner = Address::generate(&env);
+
+    let (_, client) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    // Mock auth for init
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(100), &None);
+
+    env.mock_auths(&[]); // Clear mock auths so subsequent calls require explicit valid signatures
+
+    // This should panic because neither `owner` nor `not_owner` has provided a valid mock signature.
+    client.transfer_ownership(&new_owner);
 }
