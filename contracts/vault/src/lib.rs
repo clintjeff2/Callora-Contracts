@@ -37,6 +37,10 @@ pub struct CalloraVault;
 impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance and minimum deposit.
     /// Emits an "init" event with the owner address and initial balance.
+    ///
+    /// # Security Note
+    /// The `owner` address is required to authorize the initialization transaction via `owner.require_auth()`.
+    /// This prevents unauthorized parties from initializing the vault with a "zero" or unauthenticated owner.
     pub fn init(
         env: Env,
         owner: Address,
