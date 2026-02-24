@@ -2,7 +2,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{IntoVal, Symbol};
+use soroban_sdk::{vec, IntoVal, Symbol};
 
 #[test]
 fn init_and_balance() {
@@ -57,6 +57,8 @@ fn deposit_and_deduct() {
 /// This ensures that both methods return the same balance value and that the owner remains unchanged.
 #[test]
 fn balance_and_meta_consistency() {
+#[test]
+fn batch_deduct_success() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
@@ -97,4 +99,117 @@ fn balance_and_meta_consistency() {
     assert_eq!(meta.balance, balance, "balance mismatch after multiple operations");
     assert_eq!(meta.owner, owner, "owner changed after multiple operations");
     assert_eq!(balance, 725, "incorrect final balance");
+    client.init(&owner, &Some(1000));
+    let req1 = Symbol::new(&env, "req1");
+    let req2 = Symbol::new(&env, "req2");
+    let items = vec![
+        &env,
+        DeductItem {
+            amount: 100,
+            request_id: Some(req1.clone()),
+        },
+        DeductItem {
+            amount: 200,
+            request_id: Some(req2.clone()),
+        },
+        DeductItem {
+            amount: 50,
+            request_id: None,
+        },
+    ];
+    let new_balance = client.batch_deduct(&items);
+    assert_eq!(new_balance, 650);
+    assert_eq!(client.balance(), 650);
+}
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn batch_deduct_reverts_entire_batch() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    let items = vec![
+        &env,
+        DeductItem {
+            amount: 60,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 60,
+            request_id: None,
+        }, // total 120 > 100
+    ];
+    client.batch_deduct(&items);
+}
+
+#[test]
+fn withdraw_owner_success() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(500));
+    env.mock_all_auths();
+    let new_balance = client.withdraw(&200);
+    assert_eq!(new_balance, 300);
+    assert_eq!(client.balance(), 300);
+}
+
+#[test]
+fn withdraw_exact_balance() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    env.mock_all_auths();
+    let new_balance = client.withdraw(&100);
+    assert_eq!(new_balance, 0);
+    assert_eq!(client.balance(), 0);
+}
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn withdraw_exceeds_balance_fails() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(50));
+    env.mock_all_auths();
+    client.withdraw(&100);
+}
+
+#[test]
+fn withdraw_to_success() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let to = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(500));
+    env.mock_all_auths();
+    let new_balance = client.withdraw_to(&to, &150);
+    assert_eq!(new_balance, 350);
+    assert_eq!(client.balance(), 350);
+}
+
+#[test]
+#[should_panic]
+fn withdraw_without_auth_fails() {
+    // Without mock_all_auths, invoker is not the owner, so require_auth(owner) fails.
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+    client.withdraw(&50);
 }
