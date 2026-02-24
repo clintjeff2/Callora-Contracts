@@ -478,8 +478,10 @@ fn init_none_balance() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    // Call init with None
-    client.init(&owner, &None);
+    // fixed it here:
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &None, &None);
 
     // Assert balance is 0
     assert_eq!(client.balance(), 0);
@@ -663,4 +665,47 @@ fn init_already_initialized_panics() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     client.init(&owner, &usdc_address, &Some(100), &None);
     client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
+}
+
+/// Verifies that balance remains correct after multiple deposits and deducts
+/// performed in sequence. Each step asserts the intermediate balance to ensure
+/// cumulative state correctness — i.e., no operation silently corrupts the
+/// running total.
+#[test]
+fn multiple_deposits_and_deducts_in_sequence() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+
+    // Init with zero balance
+    vault.init(&owner, &usdc_address, &Some(0), &None);
+    assert_eq!(vault.balance(), 0);
+
+    // Deposit 10 → balance should be 10
+    vault.deposit(&10);
+    assert_eq!(vault.balance(), 10);
+
+    // Deposit 20 → balance should be 30
+    vault.deposit(&20);
+    assert_eq!(vault.balance(), 30);
+
+    // Deposit 30 → balance should be 60
+    vault.deposit(&30);
+    assert_eq!(vault.balance(), 60);
+
+    // Deduct 5 → balance should be 55
+    vault.deduct(&owner, &5, &None);
+    assert_eq!(vault.balance(), 55);
+
+    // Deduct 15 → balance should be 40
+    vault.deduct(&owner, &15, &None);
+    assert_eq!(vault.balance(), 40);
+
+    // Confirm meta is also consistent at the end
+    let meta = vault.get_meta();
+    assert_eq!(meta.balance, 40);
+    assert_eq!(meta.owner, owner);
 }
