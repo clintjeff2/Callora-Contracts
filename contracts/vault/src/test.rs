@@ -2,7 +2,85 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{IntoVal, Symbol};
+use soroban_sdk::{token, vec, IntoVal, Symbol};
+
+fn create_usdc<'a>(
+    env: &'a Env,
+    admin: &Address,
+) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
+    let contract_address = env.register_stellar_asset_contract_v2(admin.clone());
+    let address = contract_address.address();
+    let client = token::Client::new(env, &address);
+    let admin_client = token::StellarAssetClient::new(env, &address);
+    (address, client, admin_client)
+}
+
+fn create_vault(env: &Env) -> (Address, CalloraVaultClient<'_>) {
+    let address = env.register(CalloraVault, ());
+    let client = CalloraVaultClient::new(env, &address);
+    (address, client)
+}
+
+fn fund_vault(
+    _env: &Env,
+    usdc_admin_client: &token::StellarAssetClient,
+    vault_address: &Address,
+    amount: i128,
+) {
+    usdc_admin_client.mint(vault_address, &amount);
+}
+
+/// Logs approximate CPU/instruction and fee for init, deposit, deduct, and balance.
+/// Run with: cargo test --ignored vault_operation_costs -- --nocapture
+/// Requires invocation cost metering; may panic on default test env.
+#[test]
+#[ignore]
+fn vault_operation_costs() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    // Register contract instance with a unique salt (owner) to avoid address reuse
+    let contract_id = env.register(CalloraVault {}, (owner.clone(),));
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+
+    client.init(&owner, &usdc, &Some(0), &None);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "init: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    client.deposit(&100);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "deposit: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    client.deduct(&owner, &50, &None);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "deduct: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    let _ = client.balance();
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "balance: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+}
 
 // ---------------------------------------------------------------------------
 // init / balance
@@ -120,7 +198,9 @@ fn deduct_reduces_balance() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &Some(100));
+    let (usdc, _, _) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    client.init(&owner, &usdc, &Some(100), &None);
     client.deposit(&200);
     assert_eq!(client.balance(), 300);
 
