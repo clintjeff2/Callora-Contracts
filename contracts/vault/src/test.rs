@@ -52,7 +52,7 @@ fn deposit_and_deduct() {
     client.deposit(&200);
     assert_eq!(client.balance(), 300);
     env.mock_all_auths();
-    client.deduct(&owner, &50, &None);
+    client.deduct(&50);
     assert_eq!(client.balance(), 250);
 }
 
@@ -138,7 +138,7 @@ fn deduct_event_emission() {
     let req_id = Symbol::new(&env, "req123");
 
     // Call client directly to avoid re-entry panic inside as_contract
-    client.deduct(&caller, &200, &Some(req_id.clone()));
+    client.deduct(&200);
 
     let events = env.events().all();
 
