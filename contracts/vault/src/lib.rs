@@ -22,6 +22,7 @@ pub struct VaultMeta {
 const META_KEY: &str = "meta";
 const USDC_KEY: &str = "usdc";
 const ADMIN_KEY: &str = "admin";
+const SETTLEMENT_KEY: &str = "settlement";
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -181,6 +182,7 @@ impl CalloraVault {
 
     /// Deduct balance for an API call. Callable by authorized caller (e.g. backend/deployer).
     /// Emits a "deduct" event with caller, optional request_id, amount, and new balance.
+    /// Automatically transfers USDC to settlement contract for revenue settlement.
     pub fn deduct(env: Env, caller: Address, amount: i128, request_id: Option<Symbol>) -> i128 {
         caller.require_auth();
         let mut meta = Self::get_meta(env.clone());
@@ -189,6 +191,9 @@ impl CalloraVault {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "meta"), &meta);
+
+        // Transfer USDC to settlement contract for revenue settlement
+        Self::transfer_to_settlement(env.clone(), amount);
 
         let topics = match &request_id {
             Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
@@ -205,6 +210,7 @@ impl CalloraVault {
     /// Batch deduct: multiple (amount, optional request_id) in one transaction.
     /// Reverts the entire batch if any single deduct would exceed balance.
     /// Emits one "deduct" event per item (same shape as single deduct).
+    /// Automatically transfers total USDC amount to settlement contract for revenue settlement.
     pub fn batch_deduct(env: Env, caller: Address, items: Vec<DeductItem>) -> i128 {
         caller.require_auth();
         let mut meta = Self::get_meta(env.clone());
@@ -213,10 +219,12 @@ impl CalloraVault {
 
         // Validate: running balance must never go negative
         let mut running = meta.balance;
+        let mut total_amount = 0i128;
         for item in items.iter() {
             assert!(item.amount > 0, "amount must be positive");
             assert!(running >= item.amount, "insufficient balance");
             running -= item.amount;
+            total_amount += item.amount;
         }
 
         // Apply all deductions and emit one event per deduct
@@ -238,6 +246,10 @@ impl CalloraVault {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "meta"), &meta);
+
+        // Transfer total USDC amount to settlement contract for revenue settlement
+        Self::transfer_to_settlement(env.clone(), total_amount);
+        
         meta.balance
     }
 
@@ -286,6 +298,46 @@ impl CalloraVault {
     /// Return current balance.
     pub fn balance(env: Env) -> i128 {
         Self::get_meta(env).balance
+    }
+
+    /// Set settlement contract address (admin only)
+    pub fn set_settlement(env: Env, caller: Address, settlement_address: Address) {
+        caller.require_auth();
+        let current_admin = Self::get_admin(env.clone());
+        if caller != current_admin {
+            panic!("unauthorized: caller is not admin");
+        }
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, SETTLEMENT_KEY), &settlement_address);
+    }
+
+    /// Get settlement contract address
+    pub fn get_settlement(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, SETTLEMENT_KEY))
+            .unwrap_or_else(|| panic!("settlement address not set"))
+    }
+
+    /// Transfer USDC to settlement contract (internal function)
+    /// Used by deduct functions to automatically transfer revenue to settlement
+    fn transfer_to_settlement(env: Env, amount: i128) {
+        let settlement_address = Self::get_settlement(env.clone());
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
+
+        let usdc = token::Client::new(&env, &usdc_address);
+        
+        // Transfer USDC to settlement contract
+        usdc.transfer(&env.current_contract_address(), &settlement_address, &amount);
+
+        // Emit transfer event
+        env.events()
+            .publish((Symbol::new(&env, "transfer_to_settlement"), settlement_address), amount);
     }
 }
 
