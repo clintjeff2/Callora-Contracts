@@ -38,12 +38,14 @@ fn fund_vault(
 fn vault_operation_costs() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
+    // Register contract instance with a unique salt (owner) to avoid address reuse
+    let contract_id = env.register(CalloraVault {}, (owner.clone(),));
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
 
-    client.init(&owner, &Some(0), &None);
+    client.init(&owner, &usdc, &Some(0), &None);
     let res = env.cost_estimate().resources();
     let fee = env.cost_estimate().fee();
     std::println!(
@@ -90,11 +92,8 @@ fn init_and_balance() {
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    client.init(&owner, &usdc, &Some(1000));
-    let events = env.as_contract(&contract_id, || {
-        CalloraVault::init(env.clone(), owner.clone(), Some(1000), None);
-        env.events().all()
-    });
+    client.init(&owner, &usdc, &Some(1000), &None);
+    let events = env.events().all();
 
     // Verify balance through client
     assert_eq!(client.balance(), 1000);
@@ -111,7 +110,7 @@ fn deposit_and_deduct() {
 
     let (usdc, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    client.init(&owner, &usdc, &Some(100));
+    client.init(&owner, &usdc, &Some(100), &None);
     client.deposit(&200);
     assert_eq!(client.balance(), 300);
     env.mock_all_auths();
@@ -132,7 +131,7 @@ fn balance_and_meta_consistency() {
     // Initialize vault with initial balance
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(500));
+    client.init(&owner, &usdc_address, &Some(500), &None);
 
     // Verify consistency after initialization
     let meta = client.get_meta();
@@ -181,7 +180,7 @@ fn deduct_exact_balance_and_panic() {
 
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100), &None);
     assert_eq!(client.balance(), 100);
 
     // Deduct exact balance
@@ -202,7 +201,7 @@ fn deduct_event_emission() {
 
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(1000));
+    client.init(&owner, &usdc_address, &Some(1000), &None);
     let req_id = Symbol::new(&env, "req123");
 
     // Call client directly to avoid re-entry panic inside as_contract
@@ -235,7 +234,7 @@ fn test_init_success() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    let meta = vault.init(&owner, &usdc_address, &None);
+    let meta = vault.init(&owner, &usdc_address, &None, &None);
 
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 0);
@@ -251,8 +250,8 @@ fn test_init_double_panics() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    vault.init(&owner, &usdc_address, &None);
-    vault.init(&owner, &usdc_address, &None);
+    vault.init(&owner, &usdc_address, &None, &None);
+    vault.init(&owner, &usdc_address, &None, &None);
 }
 
 #[test]
@@ -265,7 +264,7 @@ fn test_distribute_success() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 1_000);
     vault.distribute(&admin, &developer, &400);
 
@@ -284,7 +283,7 @@ fn test_distribute_excess_panics() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, _, usdc_admin_client) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 100);
     vault.distribute(&admin, &developer, &101);
 }
@@ -300,7 +299,7 @@ fn test_distribute_zero_panics() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     vault.distribute(&admin, &developer, &0);
 }
 
@@ -315,7 +314,7 @@ fn test_distribute_negative_panics() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     vault.distribute(&admin, &developer, &-1);
 }
 
@@ -331,7 +330,7 @@ fn test_distribute_unauthorized_panics() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, _, usdc_admin_client) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 1_000);
     vault.distribute(&attacker, &developer, &500);
 }
@@ -346,7 +345,7 @@ fn test_distribute_full_balance() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 777);
     vault.distribute(&admin, &developer, &777);
 
@@ -365,7 +364,7 @@ fn test_distribute_multiple_times() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &admin);
 
-    vault.init(&admin, &usdc_address, &None);
+    vault.init(&admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 1_000);
     vault.distribute(&admin, &dev_a, &300);
     vault.distribute(&admin, &dev_b, &200);
@@ -386,7 +385,7 @@ fn test_set_admin_transfers_control() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &original_admin);
 
-    vault.init(&original_admin, &usdc_address, &None);
+    vault.init(&original_admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 500);
     vault.set_admin(&original_admin, &new_admin);
 
@@ -408,7 +407,7 @@ fn test_old_admin_cannot_distribute_after_transfer() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, _, usdc_admin_client) = create_usdc(&env, &original_admin);
 
-    vault.init(&original_admin, &usdc_address, &None);
+    vault.init(&original_admin, &usdc_address, &None, &None);
     fund_vault(&env, &usdc_admin_client, &vault_address, 500);
     vault.set_admin(&original_admin, &new_admin);
     vault.distribute(&original_admin, &developer, &100);
@@ -423,7 +422,7 @@ fn test_deposit_and_balance() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    vault.init(&owner, &usdc_address, &Some(0));
+    vault.init(&owner, &usdc_address, &Some(0), &None);
     vault.deposit(&200);
     assert_eq!(vault.balance(), 200);
     vault.deposit(&50);
@@ -439,7 +438,7 @@ fn test_deduct_success() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    vault.init(&owner, &usdc_address, &Some(300));
+    vault.init(&owner, &usdc_address, &Some(300), &None);
     vault.deduct(&owner, &100, &None);
     assert_eq!(vault.balance(), 200);
 }
@@ -454,7 +453,7 @@ fn test_deduct_excess_panics() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    vault.init(&owner, &usdc_address, &Some(50));
+    vault.init(&owner, &usdc_address, &Some(50), &None);
     vault.deduct(&owner, &100, &None);
 }
 
@@ -467,7 +466,7 @@ fn test_get_meta_returns_correct_values() {
     let (_, vault) = create_vault(&env);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    vault.init(&owner, &usdc_address, &Some(999));
+    vault.init(&owner, &usdc_address, &Some(999), &None);
     let meta = vault.get_meta();
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 999);
@@ -480,7 +479,7 @@ fn batch_deduct_success() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(1000));
+    client.init(&owner, &usdc_address, &Some(1000), &None);
     let req1 = Symbol::new(&env, "req1");
     let req2 = Symbol::new(&env, "req2");
     let items = vec![
@@ -515,7 +514,7 @@ fn batch_deduct_reverts_entire_batch() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100), &None);
     let items = vec![
         &env,
         DeductItem {
@@ -541,7 +540,7 @@ fn withdraw_owner_success() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(500));
+    client.init(&owner, &usdc_address, &Some(500), &None);
     let new_balance = client.withdraw(&200);
     assert_eq!(new_balance, 300);
     assert_eq!(client.balance(), 300);
@@ -556,7 +555,7 @@ fn withdraw_exact_balance() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100), &None);
     let new_balance = client.withdraw(&100);
     assert_eq!(new_balance, 0);
     assert_eq!(client.balance(), 0);
@@ -572,7 +571,7 @@ fn withdraw_exceeds_balance_fails() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(50));
+    client.init(&owner, &usdc_address, &Some(50), &None);
     client.withdraw(&100);
 }
 
@@ -586,7 +585,7 @@ fn withdraw_to_success() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(500));
+    client.init(&owner, &usdc_address, &Some(500), &None);
     let new_balance = client.withdraw_to(&to, &150);
     assert_eq!(new_balance, 350);
     assert_eq!(client.balance(), 350);
@@ -606,7 +605,7 @@ fn withdraw_without_auth_fails() {
     // Instead, we can just mock_all_auths, init, then clear mock auths.
     // Mock only the `init` invocation so withdraw remains unauthenticated and fails
     env.mock_all_auths();
-    client.init(&owner, &Some(100), &None);
+    client.init(&owner, &usdc_address, &Some(100), &None);
     // Clear mocks so withdraw fails.
     // Wait, Soroban testutils doesn't have an easy way to clear auths in older versions...
     // Actually, we can just drop the mock_auths or not use mock_all_auths and use mock_auths explicitly.
@@ -626,7 +625,7 @@ fn withdraw_without_auth_fails() {
         },
     }]);
 
-    client.init(&owner, &usdc_address, &Some(100));
+    client.init(&owner, &usdc_address, &Some(100), &None);
 
     // This will fail because withdraw requires auth which is not mocked for this call
     client.withdraw(&50);
@@ -642,6 +641,6 @@ fn init_already_initialized_panics() {
 
     env.mock_all_auths();
     let (usdc_address, _, _) = create_usdc(&env, &owner);
-    client.init(&owner, &usdc_address, &Some(100));
-    client.init(&owner, &usdc_address, &Some(200)); // Should panic
+    client.init(&owner, &usdc_address, &Some(100), &None);
+    client.init(&owner, &usdc_address, &Some(200), &None); // Should panic
 }

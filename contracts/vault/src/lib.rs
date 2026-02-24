@@ -42,6 +42,7 @@ impl CalloraVault {
         owner: Address,
         usdc_token: Address,
         initial_balance: Option<i128>,
+        min_deposit: Option<i128>,
     ) -> VaultMeta {
         owner.require_auth();
         if env.storage().instance().has(&Symbol::new(&env, META_KEY)) {
