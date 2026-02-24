@@ -30,6 +30,56 @@ fn fund_vault(
     usdc_admin_client.mint(vault_address, &amount);
 }
 
+/// Logs approximate CPU/instruction and fee for init, deposit, deduct, and balance.
+/// Run with: cargo test --ignored vault_operation_costs -- --nocapture
+/// Requires invocation cost metering; may panic on default test env.
+#[test]
+#[ignore]
+fn vault_operation_costs() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    env.mock_all_auths();
+
+    client.init(&owner, &Some(0), &None);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "init: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    client.deposit(&100);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "deposit: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    client.deduct(&owner, &50, &None);
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "deduct: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+
+    let _ = client.balance();
+    let res = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    std::println!(
+        "balance: instructions={} fee_total={}",
+        res.instructions,
+        fee.total
+    );
+}
+
 #[test]
 fn init_and_balance() {
     let env = Env::default();
@@ -41,6 +91,11 @@ fn init_and_balance() {
     let (usdc, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
     client.init(&owner, &usdc, &Some(1000));
+    let events = env.as_contract(&contract_id, || {
+        CalloraVault::init(env.clone(), owner.clone(), Some(1000), None);
+        env.events().all()
+    });
+
     // Verify balance through client
     assert_eq!(client.balance(), 1000);
 
@@ -73,6 +128,7 @@ fn balance_and_meta_consistency() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     // Initialize vault with initial balance
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
@@ -549,6 +605,17 @@ fn withdraw_without_auth_fails() {
     // However mock_all_auths applies to the whole test unless explicitly managed.
     // Instead, we can just mock_all_auths, init, then clear mock auths.
     // Mock only the `init` invocation so withdraw remains unauthenticated and fails
+    env.mock_all_auths();
+    client.init(&owner, &Some(100), &None);
+    // Clear mocks so withdraw fails.
+    // Wait, Soroban testutils doesn't have an easy way to clear auths in older versions...
+    // Actually, we can just drop the mock_auths or not use mock_all_auths and use mock_auths explicitly.
+    // Actually mock_all_auths just allows anything. If we need withdraw to fail due to lack of auth,
+    // we should only mock auth for init.
+    // Let's modify this test to use standard auth mocking for init explicitly, or better yet, since client.withdraw
+    // will panic without mock_all_auths, we can just not mock it for withdraw.
+    // For init, we *have* to provide auth now.
+
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &owner,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
