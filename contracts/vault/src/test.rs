@@ -108,7 +108,9 @@ fn init_default_zero_balance() {
     let contract_id = env.register_contract(None, CalloraVault {});
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    client.init(&owner, &None);
+    env.mock_all_auths();
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    client.init(&owner, &usdc_address, &None, &None);
     assert_eq!(client.balance(), 0);
 }
 
@@ -179,7 +181,7 @@ fn balance_and_meta_consistency() {
     );
     assert_eq!(meta.owner, owner, "owner changed after multiple operations");
     assert_eq!(balance, 725, "incorrect final balance");
-}}
+}
 
 fn deduct_exact_balance_and_panic() {
     let env = Env::default();
@@ -314,6 +316,7 @@ fn test_distribute_zero_panics() {
 }
 
 #[test]
+#[should_panic(expected = "amount must be positive")]
 fn test_distribute_negative_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -488,8 +491,9 @@ fn init_none_balance() {
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     // Call init with None
-    client.init(&owner, &None);
-
+    env.mock_all_auths();
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    client.init(&owner, &usdc_address, &None, &None);
     // Assert balance is 0
     assert_eq!(client.balance(), 0);
 

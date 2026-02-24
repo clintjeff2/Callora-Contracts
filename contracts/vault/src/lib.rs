@@ -186,42 +186,6 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Deduct balance for an API call. Only backend/authorized caller in production.
-    ///
-    /// # Safety
-    /// - `amount` must be strictly positive (> 0).
-    /// - Uses `checked_sub` to prevent underflow. Panics on underflow.
-    ///
-    /// # Panics
-    /// - If `amount <= 0`.
-    /// - If `amount` exceeds the current balance (insufficient balance).
-    pub fn deduct(env: Env, amount: i128) -> i128 {
-        assert!(amount > 0, "amount must be positive");
-        let mut meta = Self::get_meta(env.clone());
-        assert!(meta.balance >= amount, "insufficient balance");
-        meta.balance = meta
-            .balance
-            .checked_sub(amount)
-            .expect("deduct underflow: balance would go below zero");
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
-=======
-        assert!(
-            amount >= meta.min_deposit,
-            "deposit below minimum: {} < {}",
-            amount,
-            meta.min_deposit
-        );
-        meta.balance += amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
-
-        env.events()
-            .publish((Symbol::new(&env, "deposit"),), (amount, meta.balance));
-        meta.balance
-    }
 
     /// Deduct balance for an API call. Callable by authorized caller (e.g. backend/deployer).
     /// Emits a "deduct" event with caller, optional request_id, amount, and new balance.
