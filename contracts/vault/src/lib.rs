@@ -55,18 +55,11 @@ impl CalloraVault {
             balance,
             min_deposit: min_deposit_val,
         };
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, META_KEY), &meta);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, USDC_KEY), &usdc_token);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, ADMIN_KEY), &owner);
+        // Persist metadata under both the literal key and the constant for safety.
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage().instance().set(&Symbol::new(&env, USDC_KEY), &usdc_token);
+        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &owner);
 
         // Emit event: topics = (init, owner), data = balance
         env.events()
@@ -90,9 +83,7 @@ impl CalloraVault {
         if caller != current_admin {
             panic!("unauthorized: caller is not admin");
         }
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
+        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
     }
 
     /// Distribute accumulated USDC to a single developer address.
@@ -128,11 +119,8 @@ impl CalloraVault {
         }
 
         // 4. Load the USDC token address.
-        let usdc_address: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
+        let usdc_opt: Option<Address> = env.storage().instance().get(&Symbol::new(&env, USDC_KEY));
+        let usdc_address: Address = usdc_opt.unwrap_or_else(|| panic!("vault not initialized"));
 
         let usdc = token::Client::new(&env, &usdc_address);
 
@@ -170,9 +158,7 @@ impl CalloraVault {
             meta.min_deposit
         );
         meta.balance += amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
 
         env.events()
             .publish((Symbol::new(&env, "deposit"),), (amount, meta.balance));
@@ -186,9 +172,7 @@ impl CalloraVault {
         let mut meta = Self::get_meta(env.clone());
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
 
         let topics = match &request_id {
             Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
@@ -235,9 +219,7 @@ impl CalloraVault {
         }
 
         meta.balance = balance;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
         meta.balance
     }
 
@@ -249,9 +231,7 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
 
         env.events().publish(
             (Symbol::new(&env, "withdraw"), meta.owner.clone()),
@@ -268,9 +248,7 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&Symbol::new(&env, "meta"), &meta);
 
         env.events().publish(
             (
