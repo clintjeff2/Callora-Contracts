@@ -41,7 +41,6 @@ impl CalloraVault {
         usdc_token: Address,
         initial_balance: Option<i128>,
     ) -> VaultMeta {
-      
         owner.require_auth();
         if env.storage().instance().has(&Symbol::new(&env, META_KEY)) {
             panic!("vault already initialized");
