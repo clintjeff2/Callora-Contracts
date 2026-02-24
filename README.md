@@ -10,13 +10,16 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
 ## What’s included
 
 - **`callora-vault`** contract:
-  - `init(owner, initial_balance)` — initialize vault for an owner
-  - `get_meta()` — owner and current balance
-  - `deposit(amount)` — increase balance
-  - `deduct(amount)` — decrease balance (e.g. per API call)
+  - `init(owner, initial_balance, min_deposit)` — initialize vault for an owner; optional minimum deposit (0 = none)
+  - `get_meta()` — owner, current balance, and min_deposit
+  - `deposit(amount)` — increase balance (panics if amount < min_deposit)
+  - `deduct(caller, amount, request_id)` — decrease balance (e.g. per API call)
+  - `batch_deduct(caller, items)` — multiple deducts in one transaction (reverts entire batch if any would exceed balance)
+  - `withdraw(amount)` — owner-only; decreases balance (USDC transfer when integrated)
+  - `withdraw_to(to, amount)` — owner-only; withdraw to a designated address
   - `balance()` — current balance
 
-Production use would add: USDC asset, auth (only backend or owner can deduct), and events.
+Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use. Approximate gas/cost notes: [BENCHMARKS.md](BENCHMARKS.md). Upgrade and migration: [UPGRADE.md](UPGRADE.md).
 
 ## Local setup
 
@@ -41,56 +44,27 @@ Production use would add: USDC asset, auth (only backend or owner can deduct), a
 
    Or use `soroban contract build` if you use the Soroban CLI workflow.
 
-## Test coverage
+## Development
 
-The project enforces a **minimum of 95 % line coverage** on every push and pull-request via GitHub Actions.
-
-### Run coverage locally
-
-```bash
-# First time only — the script auto-installs cargo-tarpaulin if absent
-./scripts/coverage.sh
-```
-
-The script will:
-
-1. Check for `cargo-tarpaulin`; install it automatically if it is missing.
-2. Run all tests with instrumentation according to `tarpaulin.toml`.
-3. Exit with a non-zero code if coverage drops below 95 %.
-4. Write reports to the `coverage/` directory (git-ignored).
-
-| Report file                      | Description                                     |
-| -------------------------------- | ----------------------------------------------- |
-| `coverage/tarpaulin-report.html` | Interactive per-file view — open in any browser |
-| `coverage/cobertura.xml`         | Cobertura XML consumed by CI                    |
-
-> **Tip:** You can also run `cargo tarpaulin` directly from the workspace root;
-> the settings in `tarpaulin.toml` are picked up automatically.
-
-### CI enforcement
-
-`.github/workflows/coverage.yml` runs on every push and pull-request.
-It installs tarpaulin, runs coverage, uploads the HTML report as a downloadable
-artefact, and posts a coverage summary table as a PR comment.
-A result below 95 % causes the workflow — and the required status check — to fail.
+Use one branch per issue or feature (e.g. `test/minimum-deposit-rejected`, `docs/vault-gas-notes`) to keep PRs small and reduce merge conflicts. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before pushing.
 
 ## Project layout
 
 ```
 callora-contracts/
-├── Cargo.toml                        # Workspace and release profile
-├── tarpaulin.toml                    # cargo-tarpaulin config (≥ 95 % enforced)
-├── scripts/
-│   └── coverage.sh                   # One-command local coverage runner
-├── .github/
-│   └── workflows/
-│       └── coverage.yml              # CI: enforces 95 % on every push / PR
-└── contracts/
-    └── vault/
-        ├── Cargo.toml
-        └── src/
-            ├── lib.rs                # Contract logic
-            └── test.rs               # Unit tests (covers all code paths)
+├── .github/workflows/
+│   └── ci.yml              # CI: fmt, clippy, test, WASM build
+├── Cargo.toml              # Workspace and release profile
+├── BENCHMARKS.md           # Vault operation gas/cost notes
+├── EVENT_SCHEMA.md         # Event names, topics, and payload types
+├── UPGRADE.md              # Vault upgrade and migration path
+├── contracts/
+│   └── vault/
+│       ├── Cargo.toml
+│       └── src/
+│           ├── lib.rs      # Contract logic
+│           └── test.rs     # Unit tests
+└── README.md
 ```
 
 ## Deployment

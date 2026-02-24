@@ -5,6 +5,5 @@ Cargo.lock
 .DS_Store
 .env
 .env.*
-
-# cargo-tarpaulin coverage output — generated locally and in CI
-coverage/
+/target/
+/target_local/
