@@ -54,14 +54,15 @@ impl CalloraVault {
     /// Emits an "init" event with the owner address and initial balance.
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
         let balance = initial_balance.unwrap_or(0);
-        let meta = VaultMeta { owner: owner.clone(), balance };
+        let meta = VaultMeta {
+            owner: owner.clone(),
+            balance,
+        };
         env.storage().instance().set(&StorageKey::Meta, &meta);
 
         // Emit event: topics = (init, owner), data = balance
-        env.events().publish(
-            (Symbol::new(&env, "init"), owner),
-            balance,
-        );
+        env.events()
+            .publish((Symbol::new(&env, "init"), owner), balance);
 
         meta
     }
@@ -69,14 +70,18 @@ impl CalloraVault {
     /// Check if the caller is authorized to deposit (owner or allowed depositor).
     fn is_authorized_depositor(env: &Env, caller: &Address) -> bool {
         let meta = Self::get_meta(env.clone());
-        
+
         // Owner is always authorized
         if caller == &meta.owner {
             return true;
         }
 
         // Check if caller is the allowed depositor
-        if let Some(allowed) = env.storage().instance().get::<StorageKey, Address>(&StorageKey::AllowedDepositor) {
+        if let Some(allowed) = env
+            .storage()
+            .instance()
+            .get::<StorageKey, Address>(&StorageKey::AllowedDepositor)
+        {
             if caller == &allowed {
                 return true;
             }
@@ -107,10 +112,14 @@ impl CalloraVault {
 
         match depositor {
             Some(addr) => {
-                env.storage().instance().set(&StorageKey::AllowedDepositor, &addr);
+                env.storage()
+                    .instance()
+                    .set(&StorageKey::AllowedDepositor, &addr);
             }
             None => {
-                env.storage().instance().remove(&StorageKey::AllowedDepositor);
+                env.storage()
+                    .instance()
+                    .remove(&StorageKey::AllowedDepositor);
             }
         }
     }
@@ -118,7 +127,7 @@ impl CalloraVault {
     /// Deposit increases balance. Callable by owner or designated depositor.
     pub fn deposit(env: Env, caller: Address, amount: i128) -> i128 {
         caller.require_auth();
-        
+
         assert!(
             Self::is_authorized_depositor(&env, &caller),
             "unauthorized: only owner or allowed depositor can deposit"
