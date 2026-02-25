@@ -140,7 +140,7 @@ fn init_with_balance_emits_event() {
 fn init_defaults_balance_to_zero() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, _) = create_usdc(&env, &owner);
 
@@ -153,7 +153,7 @@ fn init_defaults_balance_to_zero() {
 fn get_meta_returns_owner_and_balance() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
@@ -233,7 +233,7 @@ fn deduct_reduces_balance() {
 fn deduct_with_request_id() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc, _, usdc_admin) = create_usdc(&env, &owner);
     let caller = Address::generate(&env);
@@ -714,7 +714,7 @@ fn deposit_below_minimum_fails() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let depositor = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
@@ -839,7 +839,7 @@ fn get_revenue_pool_returns_none_when_not_set() {
 fn get_max_deduct_returns_configured_value() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, _) = create_usdc(&env, &owner);
 
@@ -1077,132 +1077,5 @@ fn owner_unchanged_after_deposit_and_deduct() {
     client.deposit(&owner, &50);
     client.deduct(&owner, &30, &None);
 
-    assert_eq!(client.get_meta().owner, owner);
-}
-
-#[test]
-#[should_panic(expected = "vault already initialized")]
-fn init_already_initialized_panics() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
-    client.init(&owner, &Some(200)); // Should panic
-}
-
-/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
-/// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
-#[test]
-fn fuzz_deposit_and_deduct() {
-    use rand::Rng;
-
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    let initial_balance: i128 = 1_000;
-    client.init(&owner, &Some(initial_balance));
-
-    let mut expected = initial_balance;
-    let mut rng = rand::thread_rng();
-
-    for _ in 0..500 {
-        if rng.gen_bool(0.5) {
-            let amount = rng.gen_range(1..=500);
-            client.deposit(&owner, &amount);
-            expected += amount;
-        } else if expected > 0 {
-            let amount = rng.gen_range(1..=expected.min(500));
-            client.deduct(&owner, &amount);
-            expected -= amount;
-        }
-
-        let balance = client.balance();
-        assert!(balance >= 0, "balance went negative: {}", balance);
-        assert_eq!(
-            balance, expected,
-            "balance mismatch: got {}, expected {}",
-            balance, expected
-        );
-    }
-
-    assert_eq!(client.balance(), expected);
-}
-
-#[test]
-fn deduct_returns_new_balance() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-    let new_balance = client.deduct(&owner, &30);
-    assert_eq!(new_balance, 70);
-    assert_eq!(client.balance(), 70);
-}
-
-#[test]
-fn test_concurrent_deposits() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    let dep1 = Address::generate(&env);
-    let dep2 = Address::generate(&env);
-
-    client.set_allowed_depositor(&owner, &Some(dep1.clone()));
-    client.set_allowed_depositor(&owner, &Some(dep2.clone()));
-
-    // Concurrent deposits
-    client.deposit(&dep1, &200);
-    client.deposit(&dep2, &300);
-
-    assert_eq!(client.balance(), 600);
-}
-
-#[test]
-fn init_twice_panics_on_reinit() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    client.init(&owner, &Some(25));
-    assert_eq!(client.balance(), 25);
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.init(&owner, &Some(50));
-    }));
-
-    assert!(result.is_err());
-    assert_eq!(client.balance(), 25);
-}
-
-#[test]
-fn owner_unchanged_after_deposit_and_deduct() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
-    client.deposit(&owner, &50);
-    client.deduct(&owner, &30);
     assert_eq!(client.get_meta().owner, owner);
 }

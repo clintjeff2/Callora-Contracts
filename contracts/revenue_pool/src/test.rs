@@ -2,7 +2,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{token, vec};
+use soroban_sdk::token;
 
 fn create_usdc<'a>(
     env: &'a Env,
