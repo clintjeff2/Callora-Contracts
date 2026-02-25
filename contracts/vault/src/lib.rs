@@ -84,6 +84,10 @@ impl CalloraVault {
         inst.set(&Symbol::new(&env, META_KEY), &meta);
         inst.set(&Symbol::new(&env, USDC_KEY), &usdc_token);
         inst.set(&Symbol::new(&env, ADMIN_KEY), &owner);
+        if let Some(pool) = revenue_pool {
+            inst.set(&Symbol::new(&env, REVENUE_POOL_KEY), &pool);
+        }
+        inst.set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
 
         env.events()
             .publish((Symbol::new(&env, "init"), owner), balance);
@@ -236,17 +240,6 @@ impl CalloraVault {
         let mut meta = Self::get_meta(env.clone());
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
-        let revenue_pool: Option<Address> = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, REVENUE_POOL_KEY))
-            .unwrap_or(None);
-
         meta.balance -= amount;
         let inst = env.storage().instance();
         inst.set(&Symbol::new(&env, "meta"), &meta);
@@ -274,7 +267,6 @@ impl CalloraVault {
         let n = items.len();
         assert!(n > 0, "batch_deduct requires at least one item");
 
-        let mut total_deduct = 0i128;
         let mut running = meta.balance;
         for item in items.iter() {
             assert!(item.amount > 0, "amount must be positive");
@@ -284,19 +276,7 @@ impl CalloraVault {
             );
             assert!(running >= item.amount, "insufficient balance");
             running -= item.amount;
-            total_deduct += item.amount;
         }
-
-        let usdc_address: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
-        let revenue_pool: Option<Address> = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, REVENUE_POOL_KEY))
-            .unwrap_or(None);
 
         let mut balance = meta.balance;
         for item in items.iter() {
