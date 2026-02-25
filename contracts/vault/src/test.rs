@@ -840,11 +840,11 @@ fn fuzz_deposit_and_deduct() {
     let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
 
     vault.init(&owner, &usdc_address, &Some(0), &None, &None, &None);
-    
+
     // Fund owner with enough USDC for deposits (500 iterations * max 10,000 per deposit)
     fund_user(&usdc_admin, &owner, 5_000_000);
     approve_spend(&env, &usdc_client, &owner, &vault_address, 5_000_000);
-    
+
     let mut expected: i128 = 0;
     let mut rng = StdRng::seed_from_u64(42);
 
