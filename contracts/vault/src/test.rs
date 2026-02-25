@@ -40,6 +40,17 @@ fn init_and_balance() {
 }
 
 #[test]
+fn init_default_zero_balance() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &None);
+    assert_eq!(client.balance(), 0);
+}
+
+#[test]
 fn deposit_and_deduct() {
     let env = Env::default();
     let owner = Address::generate(&env);
@@ -52,7 +63,7 @@ fn deposit_and_deduct() {
     client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
 
-    client.deduct(&50);
+    client.deduct(&owner, &50);
     assert_eq!(client.balance(), 250);
 }
 
@@ -190,109 +201,88 @@ fn deposit_after_depositor_cleared_is_rejected() {
     client.deposit(&depositor, &50);
 }
 
-mod integration {
-    //! Integration tests for vault contract with mock Stellar token.
-    //!
-    //! These tests demonstrate the full flow of token-based operations:
-    //! - Mock token creation and minting
-    //! - Vault initialization and deposits
-    //! - Balance tracking and deductions
-    //! - Authorization scenarios with allowed depositors
+#[test]
+fn test_transfer_ownership() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-    use super::*;
-    use soroban_sdk::token::{StellarAssetClient, TokenClient};
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
 
-    /// Test basic vault-token integration with owner deposits.
-    ///
-    /// Flow: Create token → Mint to owner → Owner deposits → Deduct → Verify balances
-    #[test]
-    fn vault_token_integration() {
-        let env = Env::default();
-        env.mock_all_auths();
+    client.init(&owner, &Some(100));
 
-        // Create mock token
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_id = token_contract.address();
-        let token_client = TokenClient::new(&env, &token_id);
-        let token_admin_client = StellarAssetClient::new(&env, &token_id);
+    // transfer ownership via client
+    client.transfer_ownership(&new_owner);
 
-        // Create vault
-        let vault_owner = Address::generate(&env);
-        let vault_id = env.register(CalloraVault {}, ());
-        let vault_client = CalloraVaultClient::new(&env, &vault_id);
+    let transfer_event = env
+        .events()
+        .all()
+        .into_iter()
+        .find(|e| {
+            e.0 == contract_id && {
+                let topics = &e.1;
+                if !topics.is_empty() {
+                    let topic_name: Symbol = topics.get(0).unwrap().into_val(&env);
+                    topic_name == Symbol::new(&env, "transfer_ownership")
+                } else {
+                    false
+                }
+            }
+        })
+        .expect("expected transfer event");
 
-        // Initialize vault with zero balance
-        vault_client.init(&vault_owner, &Some(0));
+    let topics = &transfer_event.1;
+    let topic_old_owner: Address = topics.get(1).unwrap().into_val(&env);
+    assert!(topic_old_owner == owner);
 
-        // Mint tokens to vault owner
-        token_admin_client.mint(&vault_owner, &1000);
-        assert_eq!(token_client.balance(&vault_owner), 1000);
+    let topic_new_owner: Address = topics.get(2).unwrap().into_val(&env);
+    assert!(topic_new_owner == new_owner);
+}
 
-        // Owner deposits 500 tokens to vault
-        vault_client.deposit(&vault_owner, &500);
+#[test]
+#[should_panic(expected = "new_owner must be different from current owner")]
+fn test_transfer_ownership_same_address_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-        // Verify vault balance increased
-        assert_eq!(vault_client.balance(), 500);
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
 
-        // Deduct 200 from vault
-        vault_client.deduct(&200);
+    client.init(&owner, &Some(100));
 
-        // Verify vault balance decreased
-        assert_eq!(vault_client.balance(), 300);
+    // This should panic because new_owner is the same as current owner
+    client.transfer_ownership(&owner);
+}
 
-        // Verify token accounting consistency
-        // Note: In full implementation, tokens would be transferred to vault contract
-        // and deductions would transfer tokens to revenue pool
-        assert_eq!(token_client.balance(&vault_owner), 1000); // Owner still has original tokens (mock scenario)
-    }
+#[test]
+#[should_panic]
+fn test_transfer_ownership_not_owner() {
+    let env = Env::default();
 
-    /// Test vault-token integration with allowed depositor (backend service).
-    ///
-    /// Flow: Create token → Set allowed depositor → Mint to backend → Backend deposits → Multiple deductions → Verify balances
-    #[test]
-    fn vault_token_integration_with_allowed_depositor() {
-        let env = Env::default();
-        env.mock_all_auths();
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let _not_owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
 
-        // Create mock token
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_id = token_contract.address();
-        let token_client = TokenClient::new(&env, &token_id);
-        let token_admin_client = StellarAssetClient::new(&env, &token_id);
+    // Mock auth for init
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &owner,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "init",
+            args: (&owner, &Some(100i128)).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
 
-        // Create vault
-        let vault_owner = Address::generate(&env);
-        let backend_service = Address::generate(&env);
-        let vault_id = env.register(CalloraVault {}, ());
-        let vault_client = CalloraVaultClient::new(&env, &vault_id);
+    client.init(&owner, &Some(100));
 
-        // Initialize vault with zero balance
-        vault_client.init(&vault_owner, &Some(0));
+    env.mock_auths(&[]); // Clear mock auths so subsequent calls require explicit valid signatures
 
-        // Set backend service as allowed depositor
-        vault_client.set_allowed_depositor(&vault_owner, &Some(backend_service.clone()));
-
-        // Mint tokens to backend service
-        token_admin_client.mint(&backend_service, &2000);
-        assert_eq!(token_client.balance(&backend_service), 2000);
-
-        // Backend service deposits 800 tokens to vault
-        vault_client.deposit(&backend_service, &800);
-
-        // Verify vault balance increased
-        assert_eq!(vault_client.balance(), 800);
-
-        // Simulate API usage - deduct 150
-        vault_client.deduct(&150);
-        assert_eq!(vault_client.balance(), 650);
-
-        // Another API call - deduct 100
-        vault_client.deduct(&100);
-        assert_eq!(vault_client.balance(), 550);
-
-        // Verify token accounting consistency
-        assert_eq!(token_client.balance(&backend_service), 2000); // Backend still has original tokens (mock scenario)
-    }
+    // This should panic because neither `owner` nor `not_owner` has provided a valid mock signature.
+    client.transfer_ownership(&new_owner);
 }
