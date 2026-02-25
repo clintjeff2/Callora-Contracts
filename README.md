@@ -18,6 +18,9 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
   - `withdraw(amount)` — owner-only; decreases balance and transfers USDC to owner
   - `withdraw_to(to, amount)` — owner-only; decreases balance and transfers USDC to `to`
   - `balance()` — current ledger balance
+  - `set_metadata(caller, offering_id, metadata)` — owner-only; attach off-chain metadata reference (IPFS CID or URI) to an offering
+  - `update_metadata(caller, offering_id, metadata)` — owner-only; update existing offering metadata
+  - `get_metadata(offering_id)` — retrieve metadata reference for an offering
 - **`callora-revenue-pool`** contract (settlement):
   - `init(admin, usdc_token)` — set admin and USDC token
   - `distribute(caller, to, amount)` — admin sends USDC from this contract to a developer

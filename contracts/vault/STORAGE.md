@@ -17,6 +17,7 @@ The Callora Vault contract uses Soroban's instance storage to persist contract s
 | `Symbol("admin")` | `Address` | Admin (e.g. backend) for distribute | Access control |
 | `Symbol("revenue_pool")` | `Option<Address>` | Optional settlement contract; receives USDC on deduct | Deduct flow |
 | `Symbol("max_deduct")` | `i128` | Maximum amount per single deduct (configurable at init) | Deduct limit |
+| `StorageKey::OfferingMetadata(offering_id)` | `String` | Off-chain metadata reference (IPFS CID or URI) per offering | Offering metadata |
 
 ### Data Structures
 
@@ -52,13 +53,42 @@ pub struct VaultMeta {
 
 ```
 Instance Storage
-└── Symbol("meta")
-    └── VaultMeta
-        ├── owner: Address
-        └── balance: i128
+├── Symbol("meta")
+│   └── VaultMeta
+│       ├── owner: Address
+│       └── balance: i128
+├── Symbol("AllowedDepositor")
+│   └── Option<Address>
+└── StorageKey::OfferingMetadata(offering_id: String)
+    └── String (IPFS CID or URI, max 256 chars)
 ```
 
 ## Upgrade Implications
+
+### Offering Metadata Storage
+
+The contract supports per-offering metadata storage, allowing issuers to attach off-chain references (IPFS CIDs or HTTPS URIs) to individual offerings.
+
+**Storage Pattern:**
+- Each offering's metadata is stored under a unique key: `StorageKey::OfferingMetadata(offering_id)`
+- Metadata is a string with a maximum length of 256 characters
+- Multiple offerings can have independent metadata entries
+
+**Access Control:**
+- Only the vault owner (issuer) can set or update metadata
+- Metadata operations emit events for indexing and tracking
+
+**Off-chain Usage Pattern:**
+Clients should:
+1. Call `get_metadata(offering_id)` to retrieve the reference
+2. If IPFS CID: Fetch from IPFS gateway (e.g., `https://ipfs.io/ipfs/{CID}`)
+3. If HTTPS URI: Fetch directly via HTTP GET
+4. Parse the JSON metadata (expected fields: name, description, image, attributes, etc.)
+
+**Storage Constraints:**
+- Maximum metadata length: 256 characters (sufficient for IPFS CIDv0/v1 and reasonable URIs)
+- Empty strings are allowed (can be used to clear metadata semantically)
+- Oversized input is rejected with a panic
 
 ### Current Layout Considerations
 - **Single Key Design**: All vault state is consolidated under one storage key, simplifying migrations
