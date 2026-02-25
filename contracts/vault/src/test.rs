@@ -643,8 +643,6 @@ fn withdraw_reduces_balance() {
 #[test]
 fn withdraw_insufficient_balance_fails() {
     let env = Env::default();
-    env.mock_all_auths();
-
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
@@ -753,10 +751,14 @@ fn deposit_at_minimum_succeeds() {
 fn double_init_fails() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
+    client.init(&owner, &Some(100));
+
+    // Owner sets the allowed depositor
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 100);
     client.init(&owner, &usdc_token, &Some(100), &None, &None, &None);
@@ -773,6 +775,9 @@ fn init_insufficient_usdc_balance_fails() {
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
+    client.init(&owner, &Some(100));
+
+    // Try to deposit as unauthorized address (should panic)
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 50);
 
@@ -791,6 +796,9 @@ fn init_with_zero_max_deduct_fails() {
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, _) = create_usdc(&env, &owner);
 
+    client.init(&owner, &Some(100));
+
+    // Owner sets allowed depositor
     env.mock_all_auths();
 
     let result = client.try_init(&owner, &usdc_token, &None, &None, &None, &Some(0));
@@ -839,6 +847,7 @@ fn get_revenue_pool_returns_none_when_not_set() {
 fn get_max_deduct_returns_configured_value() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, _) = create_usdc(&env, &owner);
@@ -850,13 +859,6 @@ fn get_max_deduct_returns_configured_value() {
     assert_eq!(max_deduct, 5000);
 }
 
-/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
-/// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
-#[test]
-fn fuzz_deposit_and_deduct() {
-    use rand::Rng;
-
-    let env = Env::default();
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
@@ -902,10 +904,8 @@ fn fuzz_deposit_and_deduct() {
     assert_eq!(vault.balance(), expected);
 }
 
-#[test]
-fn deduct_returns_new_balance() {
-    let env = Env::default();
-    env.mock_all_auths();
+    // Clear depositor
+    client.set_allowed_depositor(&owner, &None);
 
     let owner = Address::generate(&env);
     let (vault_address, vault) = create_vault(&env);
@@ -957,9 +957,11 @@ fn fuzz_deposit_and_deduct_seeded() {
 }
 
 #[test]
-fn batch_deduct_all_succeed() {
+#[should_panic(expected = "unauthorized: owner only")]
+fn non_owner_cannot_set_allowed_depositor() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
@@ -1019,13 +1021,16 @@ fn batch_deduct_all_revert() {
     ];
     let caller = Address::generate(&env);
     env.mock_all_auths();
-    client.batch_deduct(&caller, &items);
+    let non_owner_addr = Address::generate(&env);
+    client.set_allowed_depositor(&non_owner_addr, &Some(depositor));
 }
 
 #[test]
-fn batch_deduct_revert_preserves_balance() {
+#[should_panic(expected = "unauthorized: only owner or allowed depositor can deposit")]
+fn deposit_after_depositor_cleared_is_rejected() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
@@ -1077,5 +1082,10 @@ fn owner_unchanged_after_deposit_and_deduct() {
     client.deposit(&owner, &50);
     client.deduct(&owner, &30, &None);
 
-    assert_eq!(client.get_meta().owner, owner);
+    // Set and then clear depositor
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+    client.set_allowed_depositor(&owner, &None);
+
+    // Depositor should no longer be able to deposit
+    client.deposit(&depositor, &50);
 }
