@@ -376,6 +376,49 @@ fn test_transfer_ownership_same_address_fails() {
 }
 
 #[test]
+#[should_panic(expected = "insufficient balance")]
+fn deduct_greater_than_balance_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    // Mock the owner as the invoker
+    env.mock_all_auths();
+
+    // This should panic with "insufficient balance"
+    client.deduct(&owner, &101);
+}
+
+#[test]
+fn balance_unchanged_after_failed_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    // Initialize with balance of 100
+    client.init(&owner, &Some(100));
+    assert_eq!(client.balance(), 100);
+
+    // Mock the owner as the invoker
+    env.mock_all_auths();
+
+    // Attempt to deduct more than balance, which should panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.deduct(&owner, &101);
+    }));
+
+    // Verify the operation panicked
+    assert!(result.is_err());
+
+    // Verify balance is still 100 (unchanged after the failed deduct)
+    assert_eq!(client.balance(), 100);
+}
+
+#[test]
 #[should_panic]
 fn test_transfer_ownership_not_owner() {
     let env = Env::default();
