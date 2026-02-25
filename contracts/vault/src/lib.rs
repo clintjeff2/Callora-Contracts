@@ -5,32 +5,32 @@
 //! The vault implements role-based access control for deposits:
 //!
 //! - **Owner**: Set at initialization, immutable. Always permitted to deposit.
-//! - **Allowed Depositor**: Optional address (e.g., backend service) that can be
+//! - **Allowed Depositors**: Optional addresses (e.g., backend service) that can be
 //!   explicitly approved by the owner. Can be set, changed, or cleared at any time.
 //! - **Other addresses**: Rejected with an authorization error.
 //!
 //! ### Production Usage
 //!
 //! In production, the owner typically represents the end user's account, while the
-//! allowed depositor is a backend service that handles automated deposits on behalf
+//! allowed depositors are backend services that handle automated deposits on behalf
 //! of the user.
 //!
-//! ### Managing the Allowed Depositor
+//! ### Managing the Allowed Depositors
 //!
-//! - Set or update: `set_allowed_depositor(Some(address))`
-//! - Clear (revoke access): `set_allowed_depositor(None)`
+//! - Add or update: `set_allowed_depositor(Some(address))` adds the address if not present
+//! - Clear (revoke all access): `set_allowed_depositor(None)`
 //! - Only the owner can call `set_allowed_depositor`
 //!
 //! ### Security Model
 //!
 //! - The owner has full control over who can deposit
-//! - The allowed depositor is a trusted address (typically a backend service)
+//! - The allowed depositors are trusted addresses (typically backend services)
 //! - Access can be revoked at any time by the owner
 //! - All deposit attempts are authenticated against the caller's address
 
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -42,8 +42,7 @@ pub struct VaultMeta {
 #[contracttype]
 pub enum StorageKey {
     Meta,
-    AllowedDepositor,
-    ApiPrice(Symbol),
+    AllowedDepositors,
 }
 
 #[contract]
@@ -71,38 +70,31 @@ impl CalloraVault {
 
         // Emit event: topics = (init, owner), data = balance
         env.events()
-            .publish((Symbol::new(&env, "init"), owner), balance);
-
+            .publish((Symbol::new(&env, "init"), owner.clone()), balance);
         meta
     }
 
     /// Check if the caller is authorized to deposit (owner or allowed depositor).
-    fn is_authorized_depositor(env: &Env, caller: &Address) -> bool {
+    pub fn is_authorized_depositor(env: Env, caller: Address) -> bool {
         let meta = Self::get_meta(env.clone());
-
         // Owner is always authorized
-        if caller == &meta.owner {
+        if caller == meta.owner {
             return true;
         }
 
-        // Check if caller is the allowed depositor
-        if let Some(allowed) = env
+        // Check if caller is in the allowed depositors
+        let allowed: Vec<Address> = env
             .storage()
             .instance()
-            .get::<StorageKey, Address>(&StorageKey::AllowedDepositor)
-        {
-            if caller == &allowed {
-                return true;
-            }
-        }
-
-        false
+            .get(&StorageKey::AllowedDepositors)
+            .unwrap_or(Vec::new(&env));
+        allowed.contains(&caller)
     }
 
     /// Require that the caller is the owner, panic otherwise.
-    fn require_owner(env: &Env, caller: &Address) {
+    pub fn require_owner(env: Env, caller: Address) {
         let meta = Self::get_meta(env.clone());
-        assert!(caller == &meta.owner, "unauthorized: owner only");
+        assert!(caller == meta.owner, "unauthorized: owner only");
     }
 
     /// Get vault metadata (owner and balance).
@@ -116,22 +108,30 @@ impl CalloraVault {
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
-    /// Set or clear the allowed depositor address. Owner-only.
-    /// Pass `None` to revoke depositor access, `Some(address)` to grant or update.
+    /// Add or clear allowed depositors. Owner-only.
+    /// Pass `None` to clear all allowed depositors, `Some(address)` to add the address if not already present.
     pub fn set_allowed_depositor(env: Env, caller: Address, depositor: Option<Address>) {
         caller.require_auth();
-        Self::require_owner(&env, &caller);
+        Self::require_owner(env.clone(), caller.clone());
 
         match depositor {
             Some(addr) => {
+                let mut allowed: Vec<Address> = env
+                    .storage()
+                    .instance()
+                    .get(&StorageKey::AllowedDepositors)
+                    .unwrap_or(Vec::new(&env));
+                if !allowed.contains(&addr) {
+                    allowed.push_back(addr);
+                }
                 env.storage()
                     .instance()
-                    .set(&StorageKey::AllowedDepositor, &addr);
+                    .set(&StorageKey::AllowedDepositors, &allowed);
             }
             None => {
                 env.storage()
                     .instance()
-                    .remove(&StorageKey::AllowedDepositor);
+                    .remove(&StorageKey::AllowedDepositors);
             }
         }
     }
@@ -143,22 +143,26 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
 
         assert!(
-            Self::is_authorized_depositor(&env, &caller),
+            Self::is_authorized_depositor(env.clone(), caller.clone()),
             "unauthorized: only owner or allowed depositor can deposit"
         );
 
         let mut meta = Self::get_meta(env.clone());
         meta.balance += amount;
         env.storage().instance().set(&StorageKey::Meta, &meta);
+
+        env.events()
+            .publish((Symbol::new(&env, "deposit"), caller), amount);
         meta.balance
     }
 
     /// Deduct balance for an API call. Only owner/authorized caller in production.
     pub fn deduct(env: Env, caller: Address, amount: i128) -> i128 {
         caller.require_auth();
-        Self::require_owner(&env, &caller);
+        Self::require_owner(env.clone(), caller);
 
         let mut meta = Self::get_meta(env.clone());
+        assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
         meta.balance -= amount;
         env.storage().instance().set(&StorageKey::Meta, &meta);
@@ -215,9 +219,7 @@ impl CalloraVault {
         );
 
         meta.owner = new_owner;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
+        env.storage().instance().set(&StorageKey::Meta, &meta);
     }
 }
 

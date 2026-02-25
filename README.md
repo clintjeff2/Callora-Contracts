@@ -29,6 +29,20 @@ The backend resolves `(vault_id, api_id) -> price` as follows:
 
 Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use. Approximate gas/cost notes: [BENCHMARKS.md](BENCHMARKS.md). Upgrade and migration: [UPGRADE.md](UPGRADE.md).
 
+We've enhanced the `CalloraVault` contract with robust input validation to prevent invalid transactions:
+
+- **Amount Validation**: Both `deposit()` and `deduct()` now enforce `amount > 0`, rejecting zero and negative values before any state changes
+- **Improved Error Messages**: Enhanced panic messages provide clear context (e.g., "insufficient balance: X requested but only Y available")
+- **Early Validation**: Checks occur before storage writes, minimizing gas waste on invalid transactions
+- **Comprehensive Test Coverage**: Added 5 new test cases covering edge cases:
+  - `deposit_zero_panics()` — validates zero deposit rejection
+  - `deposit_negative_panics()` — validates negative deposit rejection
+  - `deduct_zero_panics()` — validates zero deduction rejection
+  - `deduct_negative_panics()` — validates negative deduction rejection
+  - `deduct_exceeds_balance_panics()` — validates insufficient balance checks with detailed error messages
+
+All tests use `#[should_panic]` assertions for guaranteed validation. This resolves issue #9.
+
 ## Local setup
 
 1. **Prerequisites:**
