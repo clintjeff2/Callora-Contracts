@@ -23,15 +23,23 @@ impl RevenuePool {
         if env.storage().instance().has(&Symbol::new(&env, ADMIN_KEY)) {
             panic!("revenue pool already initialized");
         }
-        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &admin);
-        env.storage().instance().set(&Symbol::new(&env, USDC_KEY), &usdc_token);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, ADMIN_KEY), &admin);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, USDC_KEY), &usdc_token);
 
-        env.events().publish((Symbol::new(&env, "init"), admin), usdc_token);
+        env.events()
+            .publish((Symbol::new(&env, "init"), admin), usdc_token);
     }
 
     /// Return the current admin address.
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&Symbol::new(&env, ADMIN_KEY)).unwrap_or_else(|| panic!("revenue pool not initialized"))
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, ADMIN_KEY))
+            .unwrap_or_else(|| panic!("revenue pool not initialized"))
     }
 
     /// Replace the current admin. Only the existing admin may call this.
@@ -41,7 +49,9 @@ impl RevenuePool {
         if caller != current {
             panic!("unauthorized: caller is not admin");
         }
-        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
     }
 
     /// Placeholder: record that payment was received (e.g. from vault).
@@ -82,7 +92,11 @@ impl RevenuePool {
             panic!("amount must be positive");
         }
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("revenue pool not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("revenue pool not initialized"));
         let usdc = token::Client::new(&env, &usdc_address);
 
         let contract_address = env.current_contract_address();
@@ -91,12 +105,17 @@ impl RevenuePool {
         }
 
         usdc.transfer(&contract_address, &to, &amount);
-        env.events().publish((Symbol::new(&env, "distribute"), to), amount);
+        env.events()
+            .publish((Symbol::new(&env, "distribute"), to), amount);
     }
 
     /// Return this contract's USDC balance (for testing and dashboards).
     pub fn balance(env: Env) -> i128 {
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("revenue pool not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("revenue pool not initialized"));
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.balance(&env.current_contract_address())
     }

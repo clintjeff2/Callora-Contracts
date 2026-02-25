@@ -1089,14 +1089,7 @@ fn batch_deduct_exceeds_max_deduct_panics() {
     let (usdc, _, usdc_admin) = create_usdc(&env, &owner);
 
     fund_vault(&usdc_admin, &vault_addr, 10_000);
-    vault.init(
-        &owner,
-        &usdc,
-        &Some(10_000),
-        &None,
-        &None,
-        &Some(100),
-    );
+    vault.init(&owner, &usdc, &Some(10_000), &None, &None, &Some(100));
 
     let caller = Address::generate(&env);
     let items = soroban_sdk::vec![

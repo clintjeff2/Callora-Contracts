@@ -78,20 +78,34 @@ impl CalloraVault {
             balance,
             min_deposit: min_deposit_val,
         };
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
-        env.storage().instance().set(&Symbol::new(&env, USDC_KEY), &usdc_token);
-        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &owner);
-        env.storage().instance().set(&Symbol::new(&env, REVENUE_POOL_KEY), &revenue_pool);
-        env.storage().instance().set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, USDC_KEY), &usdc_token);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, ADMIN_KEY), &owner);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, REVENUE_POOL_KEY), &revenue_pool);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
 
-        env.events().publish((Symbol::new(&env, "init"), owner), balance);
+        env.events()
+            .publish((Symbol::new(&env, "init"), owner), balance);
 
         meta
     }
 
     /// Return the current admin address.
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&Symbol::new(&env, ADMIN_KEY)).unwrap_or_else(|| panic!("vault not initialized"))
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, ADMIN_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
     /// Replace the current admin. Only the existing admin may call this.
@@ -101,17 +115,25 @@ impl CalloraVault {
         if caller != current_admin {
             panic!("unauthorized: caller is not admin");
         }
-        env.storage().instance().set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
     }
 
     /// Return the maximum allowed amount for a single deduct (configurable at init).
     pub fn get_max_deduct(env: Env) -> i128 {
-        env.storage().instance().get(&Symbol::new(&env, MAX_DEDUCT_KEY)).unwrap_or_else(|| panic!("vault not initialized"))
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, MAX_DEDUCT_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
     /// Return the revenue pool address if set (receives USDC on deduct).
     pub fn get_revenue_pool(env: Env) -> Option<Address> {
-        env.storage().instance().get(&Symbol::new(&env, REVENUE_POOL_KEY)).unwrap_or(None)
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, REVENUE_POOL_KEY))
+            .unwrap_or(None)
     }
 
     /// Distribute accumulated USDC to a single developer address.
@@ -147,7 +169,11 @@ impl CalloraVault {
         }
 
         // 4. Load the USDC token address.
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
 
         let usdc = token::Client::new(&env, &usdc_address);
 
@@ -161,12 +187,16 @@ impl CalloraVault {
         usdc.transfer(&env.current_contract_address(), &to, &amount);
 
         // 7. Emit distribute event.
-        env.events().publish((Symbol::new(&env, "distribute"), to), amount);
+        env.events()
+            .publish((Symbol::new(&env, "distribute"), to), amount);
     }
 
     /// Get vault metadata (owner and balance).
     pub fn get_meta(env: Env) -> VaultMeta {
-        env.storage().instance().get(&Symbol::new(&env, META_KEY)).unwrap_or_else(|| panic!("vault not initialized"))
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, META_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
     /// Deposit: user transfers USDC to the contract; contract increases internal balance.
@@ -183,14 +213,21 @@ impl CalloraVault {
             meta.min_deposit
         );
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&from, &env.current_contract_address(), &amount);
 
         meta.balance += amount;
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
-        env.events().publish((Symbol::new(&env, "deposit"), from), amount);
+        env.events()
+            .publish((Symbol::new(&env, "deposit"), from), amount);
 
         meta.balance
     }
@@ -208,11 +245,21 @@ impl CalloraVault {
         let mut meta = Self::get_meta(env.clone());
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
-        let revenue_pool: Option<Address> = env.storage().instance().get(&Symbol::new(&env, REVENUE_POOL_KEY)).unwrap_or(None);
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
+        let revenue_pool: Option<Address> = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, REVENUE_POOL_KEY))
+            .unwrap_or(None);
 
         meta.balance -= amount;
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         if let Some(to) = revenue_pool {
             let usdc = token::Client::new(&env, &usdc_address);
@@ -221,7 +268,11 @@ impl CalloraVault {
 
         let topics = match &request_id {
             Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
-            None => (Symbol::new(&env, "deduct"), caller.clone(), Symbol::new(&env, "")),
+            None => (
+                Symbol::new(&env, "deduct"),
+                caller.clone(),
+                Symbol::new(&env, ""),
+            ),
         };
         env.events().publish(topics, (amount, meta.balance));
         meta.balance
@@ -251,21 +302,35 @@ impl CalloraVault {
             total_deduct += item.amount;
         }
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
-        let revenue_pool: Option<Address> = env.storage().instance().get(&Symbol::new(&env, REVENUE_POOL_KEY)).unwrap_or(None);
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
+        let revenue_pool: Option<Address> = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, REVENUE_POOL_KEY))
+            .unwrap_or(None);
 
         let mut balance = meta.balance;
         for item in items.iter() {
             balance -= item.amount;
             let topics = match &item.request_id {
                 Some(rid) => (Symbol::new(&env, "deduct"), caller.clone(), rid.clone()),
-                None => (Symbol::new(&env, "deduct"), caller.clone(), Symbol::new(&env, "")),
+                None => (
+                    Symbol::new(&env, "deduct"),
+                    caller.clone(),
+                    Symbol::new(&env, ""),
+                ),
             };
             env.events().publish(topics, (item.amount, balance));
         }
 
         meta.balance = balance;
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         if total_deduct > 0 {
             if let Some(to) = revenue_pool {
@@ -284,12 +349,18 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&env.current_contract_address(), &meta.owner, &amount);
 
         meta.balance -= amount;
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         env.events().publish(
             (Symbol::new(&env, "withdraw"), meta.owner.clone()),
@@ -305,15 +376,25 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env.storage().instance().get(&Symbol::new(&env, USDC_KEY)).unwrap_or_else(|| panic!("vault not initialized"));
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("vault not initialized"));
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&env.current_contract_address(), &to, &amount);
 
         meta.balance -= amount;
-        env.storage().instance().set(&Symbol::new(&env, META_KEY), &meta);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, META_KEY), &meta);
 
         env.events().publish(
-            (Symbol::new(&env, "withdraw_to"), meta.owner.clone(), to.clone()),
+            (
+                Symbol::new(&env, "withdraw_to"),
+                meta.owner.clone(),
+                to.clone(),
+            ),
             (amount, meta.balance),
         );
         meta.balance
