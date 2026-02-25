@@ -9,6 +9,15 @@ pub struct DeductItem {
     pub amount: i128,
     pub request_id: Option<Symbol>,
 }
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol, Vec};
+
+/// Single item for batch deduct: amount and optional request id for idempotency/tracking.
+#[contracttype]
+#[derive(Clone)]
+pub struct DeductItem {
+    pub amount: i128,
+    pub request_id: Option<Symbol>,
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -27,8 +36,24 @@ const MAX_DEDUCT_KEY: &str = "max_deduct";
 
 /// Default maximum single deduct amount when not set at init (no cap).
 pub const DEFAULT_MAX_DEDUCT: i128 = i128::MAX;
+    /// Minimum amount required per deposit; deposits below this panic.
+    pub min_deposit: i128,
+}
+
+const META_KEY: &str = "meta";
+const USDC_KEY: &str = "usdc";
+const ADMIN_KEY: &str = "admin";
+const REVENUE_POOL_KEY: &str = "revenue_pool";
+const MAX_DEDUCT_KEY: &str = "max_deduct";
+
+/// Default maximum single deduct amount when not set at init (no cap).
+pub const DEFAULT_MAX_DEDUCT: i128 = i128::MAX;
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DistributeEvent {
+    pub to: Address,
+    pub amount: i128,
 #[derive(Clone, Debug, PartialEq)]
 pub struct DistributeEvent {
     pub to: Address,
@@ -40,6 +65,8 @@ pub struct CalloraVault;
 
 #[contractimpl]
 impl CalloraVault {
+    /// Initialize vault for an owner with optional initial balance and minimum deposit.
+    /// If initial_balance > 0, the contract must already hold at least that much USDC (e.g. deployer transferred in first).
     /// Initialize vault for an owner with optional initial balance and minimum deposit.
     /// If initial_balance > 0, the contract must already hold at least that much USDC (e.g. deployer transferred in first).
     /// Emits an "init" event with the owner address and initial balance.
@@ -58,9 +85,35 @@ impl CalloraVault {
     ) -> VaultMeta {
         owner.require_auth();
         if env.storage().instance().has(&Symbol::new(&env, META_KEY)) {
+    /// # Arguments
+    /// * `revenue_pool` – Optional address to receive USDC on each deduct (e.g. settlement contract). If None, USDC stays in vault.
+    /// * `max_deduct` – Optional cap per single deduct; if None, uses DEFAULT_MAX_DEDUCT (no cap).
+    pub fn init(
+        env: Env,
+        owner: Address,
+        usdc_token: Address,
+        initial_balance: Option<i128>,
+        min_deposit: Option<i128>,
+        revenue_pool: Option<Address>,
+        max_deduct: Option<i128>,
+    ) -> VaultMeta {
+        owner.require_auth();
+        if env.storage().instance().has(&Symbol::new(&env, META_KEY)) {
             panic!("vault already initialized");
         }
         let balance = initial_balance.unwrap_or(0);
+        if balance > 0 {
+            let usdc = token::Client::new(&env, &usdc_token);
+            let contract_balance = usdc.balance(&env.current_contract_address());
+            if contract_balance < balance {
+                panic!("insufficient USDC in contract for initial_balance");
+            }
+        }
+        let min_deposit_val = min_deposit.unwrap_or(0);
+        let max_deduct_val = max_deduct.unwrap_or(DEFAULT_MAX_DEDUCT);
+        if max_deduct_val <= 0 {
+            panic!("max_deduct must be positive");
+        }
         if balance > 0 {
             let usdc = token::Client::new(&env, &usdc_token);
             let contract_balance = usdc.balance(&env.current_contract_address());
@@ -187,6 +240,7 @@ impl CalloraVault {
         env.storage()
             .instance()
             .get(&Symbol::new(&env, META_KEY))
+            .get(&Symbol::new(&env, META_KEY))
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
@@ -238,6 +292,8 @@ impl CalloraVault {
         assert!(amount <= max_deduct, "deduct amount exceeds max_deduct");
 
         let mut meta = Self::get_meta(env.clone());
+        meta.owner.require_auth();
+        assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
         meta.balance -= amount;
