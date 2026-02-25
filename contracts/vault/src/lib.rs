@@ -90,8 +90,7 @@ impl CalloraVault {
         inst.set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
 
         env.events()
-            .publish((Symbol::new(&env, "init"), owner), balance);
-
+            .publish((Symbol::new(&env, "init"), owner.clone()), balance);
         meta
     }
 
@@ -238,6 +237,7 @@ impl CalloraVault {
         assert!(amount <= max_deduct, "deduct amount exceeds max_deduct");
 
         let mut meta = Self::get_meta(env.clone());
+        assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
         meta.balance -= amount;
