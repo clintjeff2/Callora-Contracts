@@ -515,6 +515,8 @@ fn test_get_meta_returns_correct_values() {
 #[test]
 fn test_multiple_depositors() {
     let env = Env::default();
+    env.mock_all_auths();
+
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
@@ -792,4 +794,54 @@ fn fuzz_deposit_and_deduct() {
     }
 
     assert_eq!(vault.balance(), expected);
+}
+
+#[test]
+fn deduct_returns_new_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    vault.init(&owner, &usdc_address, &Some(100), &None);
+    let new_balance = vault.deduct(&owner, &30, &None);
+    assert_eq!(new_balance, 70);
+    assert_eq!(vault.balance(), 70);
+}
+
+/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
+#[test]
+fn fuzz_deposit_and_deduct() {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    vault.init(&owner, &usdc_address, &Some(0), &None);
+    let mut expected: i128 = 0;
+    let mut rng = StdRng::seed_from_u64(42);
+
+    for _ in 0..500 {
+        let action: u8 = rng.gen_range(0..2);
+
+        if action == 0 {
+            let amount: i128 = rng.gen_range(1..=10_000);
+            vault.deposit(&owner, &amount);
+            expected += amount;
+        } else if expected > 0 {
+            let amount: i128 = rng.gen_range(1..=expected);
+            vault.deduct(&owner, &amount, &None);
+            expected -= amount;
+        }
+
+        assert!(expected >= 0, "balance went negative");
+        assert_eq!(vault.balance(), expected, "balance mismatch at iteration");
+    }
 }
