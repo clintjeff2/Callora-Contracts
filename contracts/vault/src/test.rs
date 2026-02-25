@@ -946,3 +946,19 @@ fn batch_deduct_revert_preserves_balance() {
     assert!(result.is_err());
     assert_eq!(client.balance(), 25);
 }
+
+#[test]
+fn owner_unchanged_after_deposit_and_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(100), &None);
+    client.deposit(&owner, &50);
+    client.deduct(&owner, &30, &None);
+
+    assert_eq!(client.get_meta().owner, owner);
+}
