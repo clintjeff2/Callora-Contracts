@@ -54,7 +54,7 @@ fn vault_operation_costs() {
         fee.total
     );
 
-    client.deposit(&100);
+    client.deposit(&owner, &100);
     let res = env.cost_estimate().resources();
     let fee = env.cost_estimate().fee();
     std::println!(
@@ -111,9 +111,8 @@ fn deposit_and_deduct() {
     let (usdc, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
     client.init(&owner, &usdc, &Some(100), &None);
-    client.deposit(&200);
+    client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
-    env.mock_all_auths();
     client.deduct(&owner, &50, &None);
     assert_eq!(client.balance(), 250);
 }
@@ -130,7 +129,6 @@ fn balance_and_meta_consistency() {
     env.mock_all_auths();
     // Initialize vault with initial balance
     let (usdc_address, _, _) = create_usdc(&env, &owner);
-    env.mock_all_auths();
     client.init(&owner, &usdc_address, &Some(500), &None);
 
     // Verify consistency after initialization
@@ -141,7 +139,7 @@ fn balance_and_meta_consistency() {
     assert_eq!(balance, 500, "incorrect balance after init");
 
     // Deposit and verify consistency
-    client.deposit(&300);
+    client.deposit(&owner, &300);
     let meta = client.get_meta();
     let balance = client.balance();
     assert_eq!(meta.balance, balance, "balance mismatch after deposit");
@@ -157,9 +155,9 @@ fn balance_and_meta_consistency() {
     assert_eq!(balance, 650, "incorrect balance after deduct");
 
     // Perform multiple operations and verify final state
-    client.deposit(&100);
+    client.deposit(&owner, &100);
     client.deduct(&owner, &50, &None);
-    client.deposit(&25);
+    client.deposit(&owner, &25);
     let meta = client.get_meta();
     let balance = client.balance();
     assert_eq!(
@@ -423,9 +421,9 @@ fn test_deposit_and_balance() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     vault.init(&owner, &usdc_address, &Some(0), &None);
-    vault.deposit(&200);
+    vault.deposit(&owner, &200);
     assert_eq!(vault.balance(), 200);
-    vault.deposit(&50);
+    vault.deposit(&owner, &50);
     assert_eq!(vault.balance(), 250);
 }
 
@@ -471,22 +469,55 @@ fn test_get_meta_returns_correct_values() {
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 999);
 }
+
 #[test]
-fn init_none_balance() {
+fn test_multiple_depositors() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
-
     env.mock_all_auths();
-    client.init(&owner, &usdc_address, &None, &None);
 
-    assert_eq!(client.balance(), 0);
+    let dep1 = Address::generate(&env);
+    let dep2 = Address::generate(&env);
 
-    let meta = client.get_meta();
-    assert_eq!(meta.owner, owner);
-    assert_eq!(meta.balance, 0);
+    // Use as_contract to call the functions directly and capture events
+    let contract_events = env.as_contract(&contract_id, || {
+        CalloraVault::init(env.clone(), owner.clone(), usdc_address.clone(), None, None);
+        CalloraVault::deposit(env.clone(), dep1.clone(), 100);
+        CalloraVault::deposit(env.clone(), dep2.clone(), 200);
+
+        env.events().all()
+    });
+
+    assert_eq!(client.balance(), 300);
+
+    // Verify events: init + 2 deposits
+    assert_eq!(contract_events.len(), 3);
+
+    // Event 1: Init event
+    let event0 = contract_events.get(0).unwrap();
+    let topic0_0: Symbol = event0.1.get(0).unwrap().into_val(&env);
+    assert_eq!(topic0_0, Symbol::new(&env, "init"));
+
+    // Event 2: deposit from dep1
+    let event1 = contract_events.get(1).unwrap();
+    let topic1_0: Symbol = event1.1.get(0).unwrap().into_val(&env);
+    let topic1_1: Address = event1.1.get(1).unwrap().into_val(&env);
+    let data1: i128 = event1.2.into_val(&env);
+    assert_eq!(topic1_0, Symbol::new(&env, "deposit"));
+    assert_eq!(topic1_1, dep1);
+    assert_eq!(data1, 100);
+
+    // Event 3: deposit from dep2
+    let event2 = contract_events.get(2).unwrap();
+    let topic2_0: Symbol = event2.1.get(0).unwrap().into_val(&env);
+    let topic2_1: Address = event2.1.get(1).unwrap().into_val(&env);
+    let data2: i128 = event2.2.into_val(&env);
+    assert_eq!(topic2_0, Symbol::new(&env, "deposit"));
+    assert_eq!(topic2_1, dep2);
+    assert_eq!(data2, 200);
 }
 
 #[test]
@@ -619,34 +650,20 @@ fn withdraw_without_auth_fails() {
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    // Need to mock auth just for init, then disable it or let withdraw fail.
-    // However mock_all_auths applies to the whole test unless explicitly managed.
-    // Instead, we can just mock_all_auths, init, then clear mock auths.
-    // Mock only the `init` invocation so withdraw remains unauthenticated and fails
-    env.mock_all_auths();
-    client.init(&owner, &usdc_address, &Some(100), &None);
-    // Clear mocks so withdraw fails.
-    // Wait, Soroban testutils doesn't have an easy way to clear auths in older versions...
-    // Actually, we can just drop the mock_auths or not use mock_all_auths and use mock_auths explicitly.
-    // Actually mock_all_auths just allows anything. If we need withdraw to fail due to lack of auth,
-    // we should only mock auth for init.
-    // Let's modify this test to use standard auth mocking for init explicitly, or better yet, since client.withdraw
-    // will panic without mock_all_auths, we can just not mock it for withdraw.
-    // For init, we *have* to provide auth now.
-
+    // Mock auth ONLY for init
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &owner,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
             fn_name: "init",
-            args: (&owner, &usdc_address, Some(100i128)).into_val(&env),
+            args: (&owner, &usdc_address, Some(100i128), Option::<i128>::None).into_val(&env),
             sub_invokes: &[],
         },
     }]);
 
     client.init(&owner, &usdc_address, &Some(100), &None);
 
-    // This will fail because withdraw requires auth which is not mocked for this call
+    // This should now panic because owner.require_auth() is called in withdraw but not mocked here
     client.withdraw(&50);
 }
 
