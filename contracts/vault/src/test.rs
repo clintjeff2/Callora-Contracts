@@ -260,3 +260,4 @@ fn get_price_for_unset_api_returns_none() {
     let price = client.get_price(&api_id);
     assert_eq!(price, None);
 }
+
