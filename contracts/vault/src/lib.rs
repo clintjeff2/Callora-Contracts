@@ -168,6 +168,33 @@ impl CalloraVault {
     pub fn balance(env: Env) -> i128 {
         Self::get_meta(env).balance
     }
+
+    pub fn transfer_ownership(env: Env, new_owner: Address) {
+        let mut meta = Self::get_meta(env.clone());
+        meta.owner.require_auth();
+
+        // Validate new_owner is not the same as current owner
+        assert!(
+            new_owner != meta.owner,
+            "new_owner must be different from current owner"
+        );
+
+        // Emit event before changing the owner, so we have the old owner
+        // topics = (transfer_ownership, old_owner, new_owner)
+        env.events().publish(
+            (
+                Symbol::new(&env, "transfer_ownership"),
+                meta.owner.clone(),
+                new_owner.clone(),
+            ),
+            (),
+        );
+
+        meta.owner = new_owner;
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
+    }
 }
 
 #[cfg(test)]
