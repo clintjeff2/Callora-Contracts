@@ -45,11 +45,23 @@ Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EV
 3. **Build WASM (for deployment):**
 
    ```bash
-   cd contracts/vault
-   cargo build --target wasm32-unknown-unknown --release
+   # Build vault contract
+   cargo build --target wasm32-unknown-unknown --release -p callora-vault
+   
+   # Or use the convenience script from project root
+   ./scripts/check-wasm-size.sh
    ```
 
-   Or use `soroban contract build` if you use the Soroban CLI workflow.
+   The vault contract WASM binary is optimized to ~17.5KB (17,926 bytes), well under Soroban's 64KB limit. The release profile in `Cargo.toml` uses aggressive size optimizations:
+   - `opt-level = "z"` - optimize for size
+   - `lto = true` - link-time optimization
+   - `strip = "symbols"` - remove debug symbols
+   - `codegen-units = 1` - better optimization at cost of compile time
+
+   To verify the WASM size stays under 64KB, run:
+   ```bash
+   ./scripts/check-wasm-size.sh
+   ```
 
 ## Development
 

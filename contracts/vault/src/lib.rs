@@ -322,6 +322,8 @@ impl CalloraVault {
     pub fn get_metadata(env: Env, offering_id: String) -> Option<String> {
         let key = StorageKey::OfferingMetadata(offering_id);
         env.storage().instance().get(&key)
+    }
+
     pub fn transfer_ownership(env: Env, new_owner: Address) {
         let mut meta = Self::get_meta(env.clone());
         meta.owner.require_auth();

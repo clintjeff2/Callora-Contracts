@@ -281,13 +281,6 @@ fn set_metadata_emits_event() {
 fn update_metadata_and_verify() {
     let env = Env::default();
     let owner = Address::generate(&env);
-#[test]
-fn test_transfer_ownership() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let owner = Address::generate(&env);
-    let new_owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
@@ -309,6 +302,48 @@ fn test_transfer_ownership() {
     // Verify updated metadata
     let retrieved = client.get_metadata(&offering_id);
     assert_eq!(retrieved, Some(new_metadata));
+}
+
+#[test]
+fn test_transfer_ownership() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    env.mock_all_auths();
+
+    // transfer ownership via client
+    client.transfer_ownership(&new_owner);
+
+    let transfer_event = env
+        .events()
+        .all()
+        .into_iter()
+        .find(|e| {
+            e.0 == contract_id && {
+                let topics = &e.1;
+                if !topics.is_empty() {
+                    let topic_name: Symbol = topics.get(0).unwrap().into_val(&env);
+                    topic_name == Symbol::new(&env, "transfer_ownership")
+                } else {
+                    false
+                }
+            }
+        })
+        .expect("expected transfer event");
+
+    let topics = &transfer_event.1;
+    let topic_old_owner: Address = topics.get(1).unwrap().into_val(&env);
+    assert!(topic_old_owner == owner);
+
+    let topic_new_owner: Address = topics.get(2).unwrap().into_val(&env);
+    assert!(topic_new_owner == new_owner);
 }
 
 #[test]
@@ -378,32 +413,18 @@ fn unauthorized_cannot_set_metadata() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let unauthorized = Address::generate(&env);
-    // transfer ownership via client
-    client.transfer_ownership(&new_owner);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
 
-    let transfer_event = env
-        .events()
-        .all()
-        .into_iter()
-        .find(|e| {
-            e.0 == contract_id && {
-                let topics = &e.1;
-                if !topics.is_empty() {
-                    let topic_name: Symbol = topics.get(0).unwrap().into_val(&env);
-                    topic_name == Symbol::new(&env, "transfer_ownership")
-                } else {
-                    false
-                }
-            }
-        })
-        .expect("expected transfer event");
+    client.init(&owner, &Some(100));
 
-    let topics = &transfer_event.1;
-    let topic_old_owner: Address = topics.get(1).unwrap().into_val(&env);
-    assert!(topic_old_owner == owner);
+    env.mock_all_auths();
 
-    let topic_new_owner: Address = topics.get(2).unwrap().into_val(&env);
-    assert!(topic_new_owner == new_owner);
+    let offering_id = String::from_str(&env, "offering-005");
+    let metadata = String::from_str(&env, "QmUnauthorized");
+
+    // Unauthorized user tries to set metadata (should panic)
+    client.set_metadata(&unauthorized, &offering_id, &metadata);
 }
 
 #[test]
@@ -420,11 +441,8 @@ fn test_transfer_ownership_same_address_fails() {
 
     env.mock_all_auths();
 
-    let offering_id = String::from_str(&env, "offering-005");
-    let metadata = String::from_str(&env, "QmUnauthorized");
-
-    // Unauthorized user tries to set metadata (should panic)
-    client.set_metadata(&unauthorized, &offering_id, &metadata);
+    // This should panic because new_owner is the same as current owner
+    client.transfer_ownership(&owner);
 }
 
 #[test]
@@ -662,10 +680,6 @@ fn multiple_offerings_can_have_metadata() {
     assert_eq!(client.get_metadata(&offering1), Some(metadata1));
     assert_eq!(client.get_metadata(&offering2), Some(metadata2));
     assert_eq!(client.get_metadata(&offering3), Some(metadata3));
-}
-
-    // This should panic because new_owner is the same as current owner
-    client.transfer_ownership(&owner);
 }
 
 #[test]
