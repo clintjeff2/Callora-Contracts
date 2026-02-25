@@ -242,7 +242,10 @@ fn set_metadata_emits_event() {
     });
 
     let offering_id = String::from_str(&env, "offering-002");
-    let metadata = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let metadata = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
 
     // Call set_metadata inside as_contract to capture events
     let events = env.as_contract(&contract_id, || {

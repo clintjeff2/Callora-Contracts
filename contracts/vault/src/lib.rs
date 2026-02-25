@@ -244,11 +244,7 @@ impl CalloraVault {
 
         // Emit event: topics = (metadata_set, offering_id, caller), data = metadata
         env.events().publish(
-            (
-                Symbol::new(&env, "metadata_set"),
-                offering_id,
-                caller,
-            ),
+            (Symbol::new(&env, "metadata_set"), offering_id, caller),
             metadata.clone(),
         );
 
@@ -289,22 +285,16 @@ impl CalloraVault {
 
         // Check if metadata exists
         let key = StorageKey::OfferingMetadata(offering_id.clone());
-        let old_metadata: String = env
-            .storage()
-            .instance()
-            .get(&key)
-            .unwrap_or_else(|| panic!("no metadata exists for this offering; use set_metadata first"));
+        let old_metadata: String = env.storage().instance().get(&key).unwrap_or_else(|| {
+            panic!("no metadata exists for this offering; use set_metadata first")
+        });
 
         // Update metadata
         env.storage().instance().set(&key, &metadata);
 
         // Emit event: topics = (metadata_updated, offering_id, caller), data = (old, new)
         env.events().publish(
-            (
-                Symbol::new(&env, "metadata_updated"),
-                offering_id,
-                caller,
-            ),
+            (Symbol::new(&env, "metadata_updated"), offering_id, caller),
             (old_metadata, metadata.clone()),
         );
 
