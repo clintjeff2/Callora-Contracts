@@ -515,6 +515,8 @@ fn test_get_meta_returns_correct_values() {
 #[test]
 fn test_multiple_depositors() {
     let env = Env::default();
+    env.mock_all_auths();
+
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
@@ -753,6 +755,7 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(200), &None, &None, &None);
 }
 
+<<<<<<< test/settlement-balance-flow
 /// Test settlement balance flow: receive payment, verify balance increase,
 /// distribute to developer, verify balance decrease and recipient received correct amount.
 ///
@@ -806,4 +809,212 @@ fn settlement_balance_after_receive_and_distribute() {
         developer_balance, distribute_amount,
         "developer should have received 60"
     );
+=======
+/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
+/// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
+#[test]
+fn fuzz_deposit_and_deduct() {
+    use rand::Rng;
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    let initial_balance: i128 = 1_000;
+    vault.init(&owner, &usdc_address, &Some(initial_balance), &None);
+    let mut expected = initial_balance;
+    let mut rng = rand::thread_rng();
+
+    for _ in 0..500 {
+        if rng.gen_bool(0.5) {
+            let amount = rng.gen_range(1..=500);
+            vault.deposit(&owner, &amount);
+            expected += amount;
+        } else if expected > 0 {
+            let amount = rng.gen_range(1..=expected.min(500));
+            vault.deduct(&owner, &amount, &None);
+            expected -= amount;
+        }
+
+        let balance = vault.balance();
+        assert!(balance >= 0, "balance went negative: {}", balance);
+        assert_eq!(
+            balance, expected,
+            "balance mismatch: got {}, expected {}",
+            balance, expected
+        );
+    }
+
+    assert_eq!(vault.balance(), expected);
+}
+
+#[test]
+fn deduct_returns_new_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    vault.init(&owner, &usdc_address, &Some(100), &None);
+    let new_balance = vault.deduct(&owner, &30, &None);
+    assert_eq!(new_balance, 70);
+    assert_eq!(vault.balance(), 70);
+}
+
+/// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
+#[test]
+fn fuzz_deposit_and_deduct() {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    vault.init(&owner, &usdc_address, &Some(0), &None);
+    let mut expected: i128 = 0;
+    let mut rng = StdRng::seed_from_u64(42);
+
+    for _ in 0..500 {
+        let action: u8 = rng.gen_range(0..2);
+
+        if action == 0 {
+            let amount: i128 = rng.gen_range(1..=10_000);
+            vault.deposit(&owner, &amount);
+            expected += amount;
+        } else if expected > 0 {
+            let amount: i128 = rng.gen_range(1..=expected);
+            vault.deduct(&owner, &amount, &None);
+            expected -= amount;
+        }
+
+        assert!(expected >= 0, "balance went negative");
+        assert_eq!(vault.balance(), expected, "balance mismatch at iteration");
+    }
+}
+
+#[test]
+fn batch_deduct_all_succeed() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(60), &None);
+    let items = vec![
+        &env,
+        DeductItem {
+            amount: 10,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 20,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 30,
+            request_id: None,
+        },
+    ];
+    let caller = Address::generate(&env);
+    env.mock_all_auths();
+    let new_balance = client.batch_deduct(&caller, &items);
+    assert_eq!(new_balance, 0);
+    assert_eq!(client.balance(), 0);
+}
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn batch_deduct_all_revert() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(25), &None);
+    assert_eq!(client.balance(), 25);
+    let items = vec![
+        &env,
+        DeductItem {
+            amount: 10,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 20,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 30,
+            request_id: None,
+        },
+    ];
+    let caller = Address::generate(&env);
+    env.mock_all_auths();
+    client.batch_deduct(&caller, &items);
+}
+
+#[test]
+fn batch_deduct_revert_preserves_balance() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(25), &None);
+    assert_eq!(client.balance(), 25);
+    let items = vec![
+        &env,
+        DeductItem {
+            amount: 10,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 20,
+            request_id: None,
+        },
+        DeductItem {
+            amount: 30,
+            request_id: None,
+        },
+    ];
+    let caller = Address::generate(&env);
+    env.mock_all_auths();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.batch_deduct(&caller, &items);
+    }));
+
+    assert!(result.is_err());
+    assert_eq!(client.balance(), 25);
+}
+
+#[test]
+fn owner_unchanged_after_deposit_and_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    client.init(&owner, &usdc_address, &Some(100), &None);
+    client.deposit(&owner, &50);
+    client.deduct(&owner, &30, &None);
+
+    assert_eq!(client.get_meta().owner, owner);
+>>>>>>> main
 }
