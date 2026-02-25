@@ -12,7 +12,11 @@ The Callora Vault contract uses Soroban's instance storage to persist contract s
 
 | Key | Type | Description | Usage |
 |-----|------|-------------|-------|
-| `Symbol("meta")` | `VaultMeta` | Primary vault metadata containing owner and balance | Core vault state |
+| `Symbol("meta")` | `VaultMeta` | Primary vault metadata (owner, balance, min_deposit) | Core vault state |
+| `Symbol("usdc")` | `Address` | USDC token contract address | Token transfers |
+| `Symbol("admin")` | `Address` | Admin (e.g. backend) for distribute | Access control |
+| `Symbol("revenue_pool")` | `Option<Address>` | Optional settlement contract; receives USDC on deduct | Deduct flow |
+| `Symbol("max_deduct")` | `i128` | Maximum amount per single deduct (configurable at init) | Deduct limit |
 
 ### Data Structures
 
