@@ -324,6 +324,8 @@ fn deduct_exceeds_balance_panics() {
 #[test]
 fn test_transfer_ownership() {
     let env = Env::default();
+    env.mock_all_auths();
+
     let owner = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
@@ -331,7 +333,7 @@ fn test_transfer_ownership() {
 
     client.init(&owner, &Some(100));
 
-    // transfer ownership via client
+    // Owner authorizes transfer (require_auth in contract)
     client.transfer_ownership(&new_owner);
 
     let transfer_event = env
