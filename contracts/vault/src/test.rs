@@ -522,7 +522,7 @@ fn test_multiple_depositors() {
 
     env.mock_all_auths();
     // Call init with None for initial_balance
-    client.init(&owner, &usdc_address, &None, &None);
+    client.init(&owner, &usdc_address, &None, &None, &None, &None);
     let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
     env.mock_all_auths();
 
@@ -780,11 +780,11 @@ fn settlement_balance_after_receive_and_distribute() {
     let (usdc_address, usdc_client, usdc_admin_client) = create_usdc(&env, &admin);
 
     // Initialize vault (settlement contract)
-    vault.init(&admin, &usdc_address, &None, &None);
+    vault.init(&admin, &usdc_address, &None, &None, &None, &None);
 
     // Step 1: Receive payment - mint 100 USDC to vault (simulates incoming payment)
     let payment_amount = 100i128;
-    fund_vault(&env, &usdc_admin_client, &vault_address, payment_amount);
+    fund_vault(&usdc_admin_client, &vault_address, payment_amount);
 
     // Step 2: Assert vault balance increased to 100
     let vault_balance_after_receive = usdc_client.balance(&vault_address);
