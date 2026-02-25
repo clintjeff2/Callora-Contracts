@@ -755,7 +755,6 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(200), &None, &None, &None);
 }
 
-<<<<<<< test/settlement-balance-flow
 /// Test settlement balance flow: receive payment, verify balance increase,
 /// distribute to developer, verify balance decrease and recipient received correct amount.
 ///
@@ -809,7 +808,8 @@ fn settlement_balance_after_receive_and_distribute() {
         developer_balance, distribute_amount,
         "developer should have received 60"
     );
-=======
+}
+
 /// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
 /// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
 #[test]
@@ -1016,5 +1016,4 @@ fn owner_unchanged_after_deposit_and_deduct() {
     client.deduct(&owner, &30, &None);
 
     assert_eq!(client.get_meta().owner, owner);
->>>>>>> main
 }
