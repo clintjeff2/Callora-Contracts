@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol, Vec};
 
 /// Single item for batch deduct: amount and optional request id for idempotency/tracking.
 #[contracttype]
@@ -199,21 +199,12 @@ impl CalloraVault {
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
-    /// Deposit increases balance. Callable by owner or designated depositor.
-    /// Requires amount > 0 to prevent no-op transactions and accidental negative flows.
-    /// Panics if amount is below the configured minimum deposit.
-    /// Emits a "deposit" event with amount and new balance.
-    pub fn deposit(env: Env, amount: i128) -> i128 {
-        assert!(
-            amount > 0,
-            "deposit amount must be positive; received: {}",
-            amount
-        );
     /// Deposit: user transfers USDC to the contract; contract increases internal balance.
     /// Caller must have authorized the transfer (token transfer_from). Supports multiple depositors.
     /// Emits a "deposit" event with the depositor address and amount.
     pub fn deposit(env: Env, from: Address, amount: i128) -> i128 {
         from.require_auth();
+        assert!(amount > 0, "amount must be positive");
 
         let mut meta = Self::get_meta(env.clone());
         assert!(
@@ -240,33 +231,9 @@ impl CalloraVault {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "meta"), &meta);
-        meta.balance
-    }
-
-    /// Deduct balance for an API call. Only backend/authorized caller in production.
-    /// Requires amount > 0 to prevent no-op transactions and accidental negative flows.
-    pub fn deduct(env: Env, amount: i128) -> i128 {
-        assert!(
-            amount > 0,
-            "deduct amount must be positive; received: {}",
-            amount
-        );
-        let mut meta = Self::get_meta(env.clone());
-        assert!(
-            meta.balance >= amount,
-            "insufficient balance: {} requested but only {} available",
-            amount,
-            meta.balance
-        );
-        meta.balance -= amount;
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "meta"), &meta);
-            .set(&Symbol::new(&env, META_KEY), &meta);
 
         env.events()
             .publish((Symbol::new(&env, "deposit"), from), amount);
-
         meta.balance
     }
 
@@ -443,6 +410,5 @@ impl CalloraVault {
         Self::get_meta(env).balance
     }
 }
-
 #[cfg(test)]
 mod test;
