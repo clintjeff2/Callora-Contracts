@@ -492,7 +492,6 @@ fn test_multiple_depositors() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     env.mock_all_auths();
 
-
     let dep1 = Address::generate(&env);
     let dep2 = Address::generate(&env);
 

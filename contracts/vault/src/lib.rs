@@ -168,7 +168,6 @@ impl CalloraVault {
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
 
-
         let mut meta = Self::get_meta(env.clone());
         assert!(
             amount >= meta.min_deposit,
