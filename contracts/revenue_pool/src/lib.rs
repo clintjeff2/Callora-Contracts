@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol, Vec};
 
 /// Revenue settlement contract: receives USDC from vault deducts and distributes to developers.
 ///
@@ -107,6 +107,51 @@ impl RevenuePool {
         usdc.transfer(&contract_address, &to, &amount);
         env.events()
             .publish((Symbol::new(&env, "distribute"), to), amount);
+    }
+
+    /// Distribute USDC from this contract to multiple developer wallets in one transaction.
+    ///
+    /// Only the admin may call. Iterates through the vector of payments and atomically
+    /// transfers USDC to each developer. Fails if the total amount exceeds balance
+    /// or if any individual amount is not positive.
+    ///
+    /// # Arguments
+    /// * `caller` - Must be the current admin.
+    /// * `payments` - A vector of (Address, amount) tuples.
+    pub fn batch_distribute(env: Env, caller: Address, payments: Vec<(Address, i128)>) {
+        caller.require_auth();
+        let admin = Self::get_admin(env.clone());
+        if caller != admin {
+            panic!("unauthorized: caller is not admin");
+        }
+
+        let mut total_amount: i128 = 0;
+        for payment in payments.iter() {
+            let (_, amount) = payment;
+            if amount <= 0 {
+                panic!("amount must be positive");
+            }
+            total_amount += amount;
+        }
+
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .unwrap_or_else(|| panic!("revenue pool not initialized"));
+        let usdc = token::Client::new(&env, &usdc_address);
+
+        let contract_address = env.current_contract_address();
+        if usdc.balance(&contract_address) < total_amount {
+            panic!("insufficient USDC balance");
+        }
+
+        for payment in payments.iter() {
+            let (to, amount) = payment;
+            usdc.transfer(&contract_address, &to, &amount);
+            env.events()
+                .publish((Symbol::new(&env, "batch_distribute"), to), amount);
+        }
     }
 
     /// Return this contract's USDC balance (for testing and dashboards).
