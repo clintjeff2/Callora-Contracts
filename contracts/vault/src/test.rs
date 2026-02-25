@@ -2,7 +2,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{token, vec, IntoVal, Symbol};
+use soroban_sdk::{token, IntoVal, Symbol};
 
 fn create_usdc<'a>(
     env: &'a Env,
@@ -748,7 +748,7 @@ fn fuzz_deposit_and_deduct() {
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
-    let (vault_addr, vault) = create_vault(&env);
+    let (_vault_addr, vault) = create_vault(&env);
     let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
 
     vault.init(&owner, &usdc_address, &Some(0), &None, &None, &None);
