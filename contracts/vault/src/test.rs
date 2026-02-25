@@ -65,7 +65,7 @@ fn deposit_and_deduct() {
     client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
 
-    client.deduct(&50);
+    client.deduct(&owner, &50);
     assert_eq!(client.balance(), 250);
 }
 
