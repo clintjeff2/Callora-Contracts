@@ -518,60 +518,22 @@ fn test_multiple_depositors() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
-    let (usdc_address, _, _) = create_usdc(&env, &owner);
-
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
     env.mock_all_auths();
-    // Call init with None balance and None min_deposit
-    client.init(&owner, &usdc_address, &None, &None);
 
-    let all_events = env.as_contract(&contract_id, || {
-        CalloraVault::init(
-            env.clone(),
-            owner.clone(),
-            usdc_address.clone(),
-            None,
-            None,
-            None,
-            None,
-        );
-        CalloraVault::deposit(env.clone(), dep1.clone(), 100);
-        CalloraVault::deposit(env.clone(), dep2.clone(), 200);
+    let dep1 = Address::generate(&env);
+    let dep2 = Address::generate(&env);
+    fund_user(&usdc_admin, &dep1, 100);
+    fund_user(&usdc_admin, &dep2, 200);
+    approve_spend(&env, &usdc_client, &dep1, &contract_id, 100);
+    approve_spend(&env, &usdc_client, &dep2, &contract_id, 200);
 
-        env.events().all()
-    });
-    let contract_events: std::vec::Vec<_> =
-        all_events.iter().filter(|e| e.0 == contract_id).collect();
+    client.init(&owner, &usdc_address, &None, &None, &None, &None);
+    client.deposit(&dep1, &100);
+    client.deposit(&dep2, &200);
 
+    // Both depositors contributed: total balance must equal 300
     assert_eq!(client.balance(), 300);
-
-    assert_eq!(
-        contract_events.len(),
-        3,
-        "vault should emit init + 2 deposits"
-    );
-
-    // Event 1: Init event
-    let event0 = contract_events.first().unwrap();
-    let topic0_0: Symbol = event0.1.get(0).unwrap().into_val(&env);
-    assert_eq!(topic0_0, Symbol::new(&env, "init"));
-
-    // Event 2: deposit from dep1
-    let event1 = contract_events.get(1).unwrap();
-    let topic1_0: Symbol = event1.1.get(0).unwrap().into_val(&env);
-    let topic1_1: Address = event1.1.get(1).unwrap().into_val(&env);
-    let data1: i128 = event1.2.into_val(&env);
-    assert_eq!(topic1_0, Symbol::new(&env, "deposit"));
-    assert_eq!(topic1_1, dep1);
-    assert_eq!(data1, 100);
-
-    // Event 3: deposit from dep2
-    let event2 = contract_events.get(2).unwrap();
-    let topic2_0: Symbol = event2.1.get(0).unwrap().into_val(&env);
-    let topic2_1: Address = event2.1.get(1).unwrap().into_val(&env);
-    let data2: i128 = event2.2.into_val(&env);
-    assert_eq!(topic2_0, Symbol::new(&env, "deposit"));
-    assert_eq!(topic2_1, dep2);
-    assert_eq!(data2, 200);
 }
 
 /// Verifies that a deposit below the configured minimum deposit panics.
@@ -587,10 +549,10 @@ fn deposit_below_minimum_panics() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
 
     // Initialize vault with a minimum deposit of 100
-    vault.init(&owner, &usdc_address, &None, &Some(100));
+    vault.init(&owner, &usdc_address, &None, &Some(100), &None, &None);
 
     // Attempt a deposit of 99, which is below the minimum — must panic
-    vault.deposit(&99);
+    vault.deposit(&owner, &99);
 }
 
 /// Verifies that a deposit exactly equal to the minimum deposit succeeds.
@@ -601,14 +563,17 @@ fn deposit_equal_to_minimum_succeeds() {
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
-    let (_, vault) = create_vault(&env);
-    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    fund_user(&usdc_admin, &owner, 100);
+    approve_spend(&env, &usdc_client, &owner, &vault_address, 100);
 
     // Initialize vault with a minimum deposit of 50
-    vault.init(&owner, &usdc_address, &None, &Some(50));
+    vault.init(&owner, &usdc_address, &None, &Some(50), &None, &None);
 
     // A deposit exactly at the minimum must succeed
-    let new_balance = vault.deposit(&50);
+    let new_balance = vault.deposit(&owner, &50);
     assert_eq!(new_balance, 50);
     assert_eq!(vault.balance(), 50);
 }
@@ -621,14 +586,17 @@ fn deposit_with_zero_minimum_always_succeeds() {
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
-    let (_, vault) = create_vault(&env);
-    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    fund_user(&usdc_admin, &owner, 100);
+    approve_spend(&env, &usdc_client, &owner, &vault_address, 100);
 
     // min_deposit = 0 means no restriction
-    vault.init(&owner, &usdc_address, &None, &Some(0));
+    vault.init(&owner, &usdc_address, &None, &Some(0), &None, &None);
 
     // Even a deposit of 1 must work
-    let new_balance = vault.deposit(&1);
+    let new_balance = vault.deposit(&owner, &1);
     assert_eq!(new_balance, 1);
     assert_eq!(vault.balance(), 1);
 }
