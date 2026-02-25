@@ -10,14 +10,18 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
 ## What’s included
 
 - **`callora-vault`** contract:
-  - `init(owner, initial_balance, min_deposit)` — initialize vault for an owner; optional minimum deposit (0 = none)
-  - `get_meta()` — owner, current balance, and min_deposit
-  - `deposit(amount)` — increase balance (panics if amount < min_deposit)
-  - `deduct(caller, amount, request_id)` — decrease balance (e.g. per API call)
-  - `batch_deduct(caller, items)` — multiple deducts in one transaction (reverts entire batch if any would exceed balance)
-  - `withdraw(amount)` — owner-only; decreases balance (USDC transfer when integrated)
-  - `withdraw_to(to, amount)` — owner-only; withdraw to a designated address
-  - `balance()` — current balance
+  - `init(owner, usdc_token, initial_balance, min_deposit, revenue_pool, max_deduct)` — initialize vault; optional revenue pool (receives USDC on deduct), optional max single deduct cap
+  - `get_meta()`, `get_max_deduct()`, `get_revenue_pool()` — view config
+  - `deposit(from, amount)` — user transfers USDC to contract (transfer_from); increases ledger balance; amount must be ≥ min_deposit
+  - `deduct(caller, amount, request_id)` — decrease balance; amount ≤ max_deduct; if revenue_pool set, USDC is transferred to it
+  - `batch_deduct(caller, items)` — batch deduct with same rules; total USDC transferred to revenue_pool if set
+  - `withdraw(amount)` — owner-only; decreases balance and transfers USDC to owner
+  - `withdraw_to(to, amount)` — owner-only; decreases balance and transfers USDC to `to`
+  - `balance()` — current ledger balance
+- **`callora-revenue-pool`** contract (settlement):
+  - `init(admin, usdc_token)` — set admin and USDC token
+  - `distribute(caller, to, amount)` — admin sends USDC from this contract to a developer
+  - Flow: vault deduct → vault transfers USDC to revenue pool → admin calls `distribute(to, amount)`
 
 Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use. Approximate gas/cost notes: [BENCHMARKS.md](BENCHMARKS.md). Upgrade and migration: [UPGRADE.md](UPGRADE.md).
 
@@ -59,10 +63,15 @@ callora-contracts/
 ├── EVENT_SCHEMA.md         # Event names, topics, and payload types
 ├── UPGRADE.md              # Vault upgrade and migration path
 ├── contracts/
-│   └── vault/
+│   ├── vault/
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs      # Contract logic
+│   │       └── test.rs     # Unit tests
+│   └── revenue_pool/
 │       ├── Cargo.toml
 │       └── src/
-│           ├── lib.rs      # Contract logic
+│           ├── lib.rs      # Settlement contract
 │           └── test.rs     # Unit tests
 └── README.md
 ```
