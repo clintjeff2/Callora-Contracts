@@ -53,7 +53,7 @@ fn vault_full_lifecycle() {
     assert_eq!(client.get_admin(), owner);
 
     // 2. Deposit – must be ≥ min_deposit.
-    let after_deposit = client.deposit(&200);
+    let after_deposit = client.deposit(&caller, &200);
     assert_eq!(after_deposit, 700);
     assert_eq!(client.balance(), 700);
 
@@ -226,7 +226,7 @@ fn deposit_and_balance_match() {
     env.mock_all_auths();
 
     client.init(&owner, &usdc_token, &Some(100), &None);
-    let returned = client.deposit(&200);
+    let returned = client.deposit(&owner, &200);
 
     assert_eq!(
         returned, 300,
@@ -645,6 +645,7 @@ fn batch_deduct_success() {
     let (usdc_address, _, _) = create_usdc(&env, &owner);
     let usdc_token = Address::generate(&env);
 
+    let caller = Address::generate(&env);
     env.mock_all_auths();
     client.init(&owner, &usdc_token, &Some(1000), &None);
 
@@ -852,7 +853,7 @@ fn deposit_below_minimum_fails() {
     env.mock_all_auths();
     client.init(&owner, &usdc_token, &Some(100), &Some(50)); // min_deposit = 50
 
-    let result = client.try_deposit(&30); // below minimum
+    let result = client.try_deposit(&owner, &30); // below minimum
     assert!(result.is_err(), "expected error for deposit below minimum");
 }
 
@@ -868,7 +869,7 @@ fn deposit_at_minimum_succeeds() {
     env.mock_all_auths();
     client.init(&owner, &usdc_token, &Some(100), &Some(50)); // min_deposit = 50
 
-    let new_balance = client.deposit(&50);
+    let new_balance = client.deposit(&owner, &50);
     assert_eq!(new_balance, 150);
 }
 
