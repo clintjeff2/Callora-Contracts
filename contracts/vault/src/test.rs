@@ -189,3 +189,74 @@ fn deposit_after_depositor_cleared_is_rejected() {
     // Depositor should no longer be able to deposit
     client.deposit(&depositor, &50);
 }
+
+#[test]
+fn owner_can_set_and_get_price() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    let api_id = Symbol::new(&env, "my_api");
+
+    env.mock_all_auths();
+    client.set_price(&owner, &api_id, &10);
+
+    let price = client.get_price(&api_id);
+    assert_eq!(price, Some(10));
+}
+
+#[test]
+fn allowed_depositor_can_set_price() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    let api_id = Symbol::new(&env, "backend_api");
+
+    env.mock_all_auths();
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+
+    client.set_price(&depositor, &api_id, &25);
+
+    let price = client.get_price(&api_id);
+    assert_eq!(price, Some(25));
+}
+
+#[test]
+#[should_panic(expected = "unauthorized: only owner or allowed depositor can set price")]
+fn unauthorized_cannot_set_price() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    let api_id = Symbol::new(&env, "restricted_api");
+
+    env.mock_all_auths();
+    client.set_price(&unauthorized, &api_id, &5);
+}
+
+#[test]
+fn get_price_for_unset_api_returns_none() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    let api_id = Symbol::new(&env, "unset_api");
+
+    let price = client.get_price(&api_id);
+    assert_eq!(price, None);
+}
