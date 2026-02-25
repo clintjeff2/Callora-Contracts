@@ -45,56 +45,28 @@ fn approve_spend(
     usdc_client.approve(from, spender, &amount, &0u32);
 }
 
-/// Logs approximate CPU/instruction and fee for init, deposit, deduct, and balance.
-/// Run with: cargo test --ignored vault_operation_costs -- --nocapture
-/// Requires invocation cost metering; may panic on default test env.
+/// Verifies that init, deposit, deduct, and balance all complete successfully
+/// and that balance() matches the expected value after each operation.
 #[test]
-#[ignore]
 fn vault_operation_costs() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    // Register contract instance with a unique salt (owner) to avoid address reuse
-    let contract_id = env.register(CalloraVault {}, (owner.clone(),));
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
-    let (usdc, _, _) = create_usdc(&env, &owner);
+    let (usdc, usdc_client, usdc_admin) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
 
     client.init(&owner, &usdc, &Some(0), &None, &None, &None);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "init: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    assert_eq!(client.balance(), 0);
 
+    fund_user(&usdc_admin, &owner, 100);
+    approve_spend(&env, &usdc_client, &owner, &contract_id, 100);
     client.deposit(&owner, &100);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "deposit: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    assert_eq!(client.balance(), 100);
 
     client.deduct(&owner, &50, &None);
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "deduct: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
-
-    let _ = client.balance();
-    let res = env.cost_estimate().resources();
-    let fee = env.cost_estimate().fee();
-    std::println!(
-        "balance: instructions={} fee_total={}",
-        res.instructions,
-        fee.total
-    );
+    assert_eq!(client.balance(), 50);
 }
 
 #[test]
@@ -752,3 +724,536 @@ fn init_already_initialized_panics() {
     client.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
     client.init(&owner, &usdc_address, &Some(200), &None, &None, &None);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage tests
+// ---------------------------------------------------------------------------
+
+/// init with initial_balance > 0 but vault holds less USDC → panic.
+#[test]
+#[should_panic(expected = "insufficient USDC in contract for initial_balance")]
+fn init_insufficient_usdc_for_initial_balance_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    // Only mint 50 into the vault but claim initial_balance = 100
+    fund_vault(&usdc_admin, &contract_id, 50);
+    client.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+}
+
+/// init with max_deduct = Some(0) → panic.
+#[test]
+#[should_panic(expected = "max_deduct must be positive")]
+fn init_zero_max_deduct_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &None, &None, &Some(0));
+}
+
+/// init with max_deduct = Some(-1) → panic.
+#[test]
+#[should_panic(expected = "max_deduct must be positive")]
+fn init_negative_max_deduct_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &None, &None, &Some(-1));
+}
+
+/// init with a real revenue_pool and explicit max_deduct exercises the
+/// REVENUE_POOL_KEY and MAX_DEDUCT_KEY storage-set paths.
+#[test]
+fn init_with_revenue_pool_and_max_deduct() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 500);
+    vault.init(
+        &owner,
+        &usdc_address,
+        &Some(500),
+        &None,
+        &Some(revenue_pool.clone()),
+        &Some(200),
+    );
+    assert_eq!(vault.get_max_deduct(), 200);
+    assert_eq!(vault.get_revenue_pool(), Some(revenue_pool));
+}
+
+/// get_revenue_pool returns None when init was called without revenue_pool.
+#[test]
+fn get_revenue_pool_returns_none_when_not_set() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &None, &None, &None);
+    assert_eq!(vault.get_revenue_pool(), None);
+}
+
+/// set_admin unauthorized caller panics.
+#[test]
+#[should_panic(expected = "unauthorized: caller is not admin")]
+fn set_admin_unauthorized_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &None, &None, &None);
+    vault.set_admin(&intruder, &new_admin);
+}
+
+/// set_admin success path — exercises the storage set on line 120.
+#[test]
+fn set_admin_success() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &None, &None, &None);
+    assert_eq!(vault.get_admin(), owner);
+    vault.set_admin(&owner, &new_admin);
+    assert_eq!(vault.get_admin(), new_admin);
+}
+
+/// deduct with a configured revenue_pool transfers USDC to the pool.
+#[test]
+fn deduct_with_revenue_pool_transfers_usdc() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 1_000);
+    vault.init(
+        &owner,
+        &usdc_address,
+        &Some(1_000),
+        &None,
+        &Some(revenue_pool.clone()),
+        &None,
+    );
+
+    vault.deduct(&owner, &300, &None);
+    assert_eq!(vault.balance(), 700);
+    assert_eq!(usdc_client.balance(&revenue_pool), 300);
+    assert_eq!(usdc_client.balance(&vault_address), 700);
+}
+
+/// deduct with request_id and revenue_pool — covers the Some(rid) topic path
+/// and the revenue pool transfer together.
+#[test]
+fn deduct_with_request_id_and_revenue_pool() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 500);
+    vault.init(
+        &owner,
+        &usdc_address,
+        &Some(500),
+        &None,
+        &Some(revenue_pool.clone()),
+        &None,
+    );
+
+    let rid = Symbol::new(&env, "rid1");
+    vault.deduct(&owner, &100, &Some(rid));
+    assert_eq!(vault.balance(), 400);
+    assert_eq!(usdc_client.balance(&revenue_pool), 100);
+}
+
+/// batch_deduct with revenue_pool transfers the total deducted USDC to the pool.
+#[test]
+fn batch_deduct_with_revenue_pool_transfers_usdc() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 1_000);
+    vault.init(
+        &owner,
+        &usdc_address,
+        &Some(1_000),
+        &None,
+        &Some(revenue_pool.clone()),
+        &None,
+    );
+
+    let items = vec![
+        &env,
+        DeductItem { amount: 200, request_id: Some(Symbol::new(&env, "b1")) },
+        DeductItem { amount: 150, request_id: None },
+    ];
+    let new_balance = vault.batch_deduct(&caller, &items);
+    assert_eq!(new_balance, 650);
+    assert_eq!(usdc_client.balance(&revenue_pool), 350);
+    assert_eq!(usdc_client.balance(&vault_address), 650);
+}
+
+/// withdraw_to with zero amount panics.
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn withdraw_to_zero_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let to = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 100);
+    vault.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+    vault.withdraw_to(&to, &0);
+}
+
+/// withdraw_to with amount exceeding balance panics.
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn withdraw_to_excess_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let to = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 100);
+    vault.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+    vault.withdraw_to(&to, &200);
+}
+
+/// withdraw with zero amount panics.
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn withdraw_zero_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 100);
+    vault.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+    vault.withdraw(&0);
+}
+
+/// deposit below min_deposit panics.
+#[test]
+#[should_panic]
+fn deposit_below_min_deposit_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    vault.init(&owner, &usdc_address, &None, &Some(50), &None, &None);
+    fund_user(&usdc_admin, &owner, 30);
+    approve_spend(&env, &usdc_client, &owner, &vault_address, 30);
+    vault.deposit(&owner, &30); // below min_deposit of 50
+}
+
+/// batch_deduct zero amount item panics.
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn batch_deduct_zero_amount_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 100);
+    vault.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+    let items = vec![&env, DeductItem { amount: 0, request_id: None }];
+    vault.batch_deduct(&caller, &items);
+}
+
+/// batch_deduct empty items panics.
+#[test]
+#[should_panic(expected = "batch_deduct requires at least one item")]
+fn batch_deduct_empty_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 100);
+    vault.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
+    let items: soroban_sdk::Vec<DeductItem> = soroban_sdk::vec![&env];
+    vault.batch_deduct(&caller, &items);
+}
+
+/// batch_deduct item exceeds max_deduct panics.
+#[test]
+#[should_panic(expected = "deduct amount exceeds max_deduct")]
+fn batch_deduct_exceeds_max_deduct_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &vault_address, 1_000);
+    vault.init(&owner, &usdc_address, &Some(1_000), &None, &None, &Some(50));
+    let items = vec![&env, DeductItem { amount: 100, request_id: None }]; // 100 > max_deduct 50
+    vault.batch_deduct(&caller, &items);
+}
+
+// ---------------------------------------------------------------------------
+// Direct-call (as_contract) tests — force tarpaulin to instrument the
+// chained-method lines that the Soroban host hides when called via client.
+// ---------------------------------------------------------------------------
+
+/// Covers init() storage .set() lines (83,86,89,92,95) and set_admin .set() (120)
+/// by calling CalloraVault functions directly inside as_contract.
+#[test]
+fn direct_init_storage_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 200);
+
+    env.as_contract(&contract_id, || {
+        CalloraVault::init(
+            env.clone(),
+            owner.clone(),
+            usdc_address.clone(),
+            Some(200),
+            Some(10),
+            Some(revenue_pool.clone()),
+            Some(50),
+        );
+    });
+
+    // Verify the stored values via client
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    assert_eq!(client.balance(), 200);
+    assert_eq!(client.get_max_deduct(), 50);
+    assert_eq!(client.get_revenue_pool(), Some(revenue_pool));
+    assert_eq!(client.get_admin(), owner);
+}
+
+/// Covers set_admin() .set() line (120) directly.
+#[test]
+fn direct_set_admin_storage_line() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+
+    // Init via client so its require_auth() fires in a separate invocation frame.
+    client.init(&owner, &usdc_address, &None, &None, &None, &None);
+
+    // Fresh as_contract frame — owner auth is not yet consumed here.
+    env.as_contract(&contract_id, || {
+        CalloraVault::set_admin(env.clone(), owner.clone(), new_admin.clone());
+    });
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+/// Covers distribute() USDC-lookup line (176), deposit() USDC-lookup (220)
+/// and deposit() storage .set() (232) directly.
+#[test]
+fn direct_deposit_and_distribute_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let developer = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+
+    // Init via client (separate frame → no conflict for subsequent direct calls).
+    client.init(&owner, &usdc_address, &None, &None, &None, &None);
+
+    // Fund owner so transfer_from inside deposit() succeeds.
+    fund_user(&usdc_admin, &owner, 500);
+    approve_spend(&env, &usdc_client, &owner, &contract_id, 500);
+
+    // deposit directly — covers lines 220, 232. Fresh frame → no ExistingValue.
+    env.as_contract(&contract_id, || {
+        CalloraVault::deposit(env.clone(), owner.clone(), 300);
+    });
+
+    // distribute directly — covers line 176. Another fresh frame.
+    env.as_contract(&contract_id, || {
+        CalloraVault::distribute(env.clone(), owner.clone(), developer.clone(), 200);
+    });
+
+    // meta.balance = 300 (deposit); distribute only moves on-chain USDC, not meta.
+    assert_eq!(client.balance(), 300);
+    assert_eq!(usdc_client.balance(&developer), 200);
+}
+
+/// Covers deduct() USDC/pool-lookup lines (257,262,267) and the revenue-pool
+/// transfer (270-271) directly.
+#[test]
+fn direct_deduct_with_revenue_pool_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 1_000);
+
+    // Init via client — separate frame, no conflict.
+    client.init(
+        &owner,
+        &usdc_address,
+        &Some(1_000),
+        &None,
+        &Some(revenue_pool.clone()),
+        &None,
+    );
+
+    // deduct with request_id — fresh frame, covers 257,262,267,270-271 + Some(rid) topic branch.
+    env.as_contract(&contract_id, || {
+        CalloraVault::deduct(
+            env.clone(),
+            owner.clone(),
+            400,
+            Some(Symbol::new(&env, "r1")),
+        );
+    });
+
+    // deduct without request_id — another fresh frame, covers None topic branch.
+    env.as_contract(&contract_id, || {
+        CalloraVault::deduct(env.clone(), owner.clone(), 100, None);
+    });
+
+    assert_eq!(client.balance(), 500);
+    assert_eq!(usdc_client.balance(&revenue_pool), 500);
+}
+
+/// Covers batch_deduct() USDC/pool-lookup lines (314,319,338) and the
+/// revenue-pool bulk transfer (342-343) directly.
+#[test]
+fn direct_batch_deduct_with_revenue_pool_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let revenue_pool = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 1_000);
+
+    env.as_contract(&contract_id, || {
+        CalloraVault::init(
+            env.clone(),
+            owner.clone(),
+            usdc_address.clone(),
+            Some(1_000),
+            None,
+            Some(revenue_pool.clone()),
+            None,
+        );
+        let items = soroban_sdk::vec![
+            &env,
+            DeductItem { amount: 200, request_id: Some(Symbol::new(&env, "b1")) },
+            DeductItem { amount: 150, request_id: None },
+        ];
+        CalloraVault::batch_deduct(env.clone(), caller.clone(), items);
+    });
+
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    assert_eq!(client.balance(), 650);
+    assert_eq!(usdc_client.balance(&revenue_pool), 350);
+}
+
+/// Covers withdraw() USDC-lookup (361) and .set() (368) directly.
+#[test]
+fn direct_withdraw_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 500);
+
+    // Init via client — separate frame.
+    client.init(&owner, &usdc_address, &Some(500), &None, &None, &None);
+
+    // withdraw directly — fresh frame, covers 361, 368.
+    env.as_contract(&contract_id, || {
+        CalloraVault::withdraw(env.clone(), 200);
+    });
+
+    assert_eq!(client.balance(), 300);
+    assert_eq!(usdc_client.balance(&owner), 200);
+}
+
+/// Covers withdraw_to() USDC-lookup (388) and .set() (395) directly.
+#[test]
+fn direct_withdraw_to_lines() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 500);
+
+    // Init via client — separate frame.
+    client.init(&owner, &usdc_address, &Some(500), &None, &None, &None);
+
+    // withdraw_to directly — fresh frame, covers 388, 395.
+    env.as_contract(&contract_id, || {
+        CalloraVault::withdraw_to(env.clone(), recipient.clone(), 150);
+    });
+
+    assert_eq!(client.balance(), 350);
+    assert_eq!(usdc_client.balance(&recipient), 150);
+}
+
