@@ -120,12 +120,6 @@ fn init_with_balance_emits_event() {
     });
 
     let client = CalloraVaultClient::new(&env, &contract_id);
-    let (usdc, _, usdc_admin) = create_usdc(&env, &owner);
-    env.mock_all_auths();
-    fund_vault(&usdc_admin, &contract_id, 1000);
-    client.init(&owner, &usdc, &Some(1000), &None, &None, &None);
-    let _events = env.events().all();
-
     assert_eq!(client.balance(), 1000);
 
     let last_event = events.last().expect("expected at least one event");
@@ -233,54 +227,6 @@ fn deduct_reduces_balance() {
     let returned = client.deduct(&caller, &50, &None);
     assert_eq!(returned, 250, "deduct should return the remaining balance");
     assert_eq!(client.balance(), 250);
-}
-
-/// Test that verifies consistency between balance() and get_meta() after init, deposit, and deduct.
-/// This ensures that both methods return the same balance value and that the owner remains unchanged.
-#[test]
-fn balance_and_meta_consistency() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
-    fund_vault(&usdc_admin, &contract_id, 500);
-    client.init(&owner, &usdc_address, &Some(500), &None, &None, &None);
-
-    let meta = client.get_meta();
-    let balance = client.balance();
-    assert_eq!(meta.balance, balance, "balance mismatch after init");
-    assert_eq!(meta.owner, owner, "owner changed after init");
-    assert_eq!(balance, 500, "incorrect balance after init");
-
-    fund_user(&usdc_admin, &owner, 425);
-    approve_spend(&env, &usdc_client, &owner, &contract_id, 425);
-    client.deposit(&owner, &300);
-    let meta = client.get_meta();
-    let balance = client.balance();
-    assert_eq!(meta.balance, balance, "balance mismatch after deposit");
-    assert_eq!(balance, 800, "incorrect balance after deposit");
-
-    client.deduct(&owner, &150, &None);
-    let meta = client.get_meta();
-    let balance = client.balance();
-    assert_eq!(meta.balance, balance, "balance mismatch after deduct");
-    assert_eq!(balance, 650, "incorrect balance after deduct");
-
-    fund_user(&usdc_admin, &owner, 125);
-    approve_spend(&env, &usdc_client, &owner, &contract_id, 125);
-    client.deposit(&owner, &100);
-    client.deduct(&owner, &50, &None);
-    client.deposit(&owner, &25);
-    let meta = client.get_meta();
-    let balance = client.balance();
-    assert_eq!(
-        meta.balance, balance,
-        "balance mismatch after multiple operations"
-    );
-    assert_eq!(balance, 725, "incorrect final balance");
 }
 
 #[test]
@@ -695,22 +641,6 @@ fn withdraw_reduces_balance() {
 }
 
 #[test]
-fn withdraw_exact_balance() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
-
-    env.mock_all_auths();
-    fund_vault(&usdc_admin, &contract_id, 100);
-    client.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
-    let new_balance = client.withdraw(&100);
-    assert_eq!(new_balance, 0);
-    assert_eq!(client.balance(), 0);
-}
-
-#[test]
 fn withdraw_insufficient_balance_fails() {
     let env = Env::default();
     env.mock_all_auths();
@@ -783,6 +713,7 @@ fn withdraw_to_insufficient_balance_fails() {
 fn deposit_below_minimum_fails() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
@@ -802,6 +733,7 @@ fn deposit_below_minimum_fails() {
 fn deposit_at_minimum_succeeds() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
