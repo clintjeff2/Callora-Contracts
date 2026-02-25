@@ -691,7 +691,7 @@ fn owner_unchanged_after_deposit_and_deduct() {
 
     env.mock_all_auths();
     client.init(&owner, &usdc_address, &Some(100), &None);
-    client.deposit(&50);
+    client.deposit(&owner, &50);
     client.deduct(&owner, &30, &None);
 
     assert_eq!(client.get_meta().owner, owner);
