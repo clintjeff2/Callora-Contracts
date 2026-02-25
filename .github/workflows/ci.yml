@@ -64,3 +64,5 @@ jobs:
         run: |
           cd contracts/vault
           cargo build --target wasm32-unknown-unknown --release
+          cd ../revenue_pool
+          cargo build --target wasm32-unknown-unknown --release
