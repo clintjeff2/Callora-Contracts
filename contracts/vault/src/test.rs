@@ -501,7 +501,6 @@ fn test_multiple_depositors() {
         CalloraVault::deposit(env.clone(), dep1.clone(), 100);
         CalloraVault::deposit(env.clone(), dep2.clone(), 200);
 
-
         env.events().all()
     });
 
