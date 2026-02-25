@@ -477,9 +477,11 @@ fn init_none_balance() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
 
-    // Call init with None
-    client.init(&owner, &None);
+    env.mock_all_auths();
+    // Call init with None balance and None min_deposit
+    client.init(&owner, &usdc_address, &None, &None);
 
     // Assert balance is 0
     assert_eq!(client.balance(), 0);
@@ -488,6 +490,65 @@ fn init_none_balance() {
     let meta = client.get_meta();
     assert_eq!(meta.owner, owner);
     assert_eq!(meta.balance, 0);
+}
+
+/// Verifies that a deposit below the configured minimum deposit panics.
+/// Issue #43: Enforce Minimum Deposit Amount (Configurable)
+#[test]
+#[should_panic(expected = "deposit below minimum")]
+fn deposit_below_minimum_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    // Initialize vault with a minimum deposit of 100
+    vault.init(&owner, &usdc_address, &None, &Some(100));
+
+    // Attempt a deposit of 99, which is below the minimum — must panic
+    vault.deposit(&99);
+}
+
+/// Verifies that a deposit exactly equal to the minimum deposit succeeds.
+/// Issue #43: Enforce Minimum Deposit Amount (Configurable)
+#[test]
+fn deposit_equal_to_minimum_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    // Initialize vault with a minimum deposit of 50
+    vault.init(&owner, &usdc_address, &None, &Some(50));
+
+    // A deposit exactly at the minimum must succeed
+    let new_balance = vault.deposit(&50);
+    assert_eq!(new_balance, 50);
+    assert_eq!(vault.balance(), 50);
+}
+
+/// Verifies that when min_deposit is 0 (disabled), any positive deposit is accepted.
+/// Issue #43: Enforce Minimum Deposit Amount (Configurable)
+#[test]
+fn deposit_with_zero_minimum_always_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (_, vault) = create_vault(&env);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+
+    // min_deposit = 0 means no restriction
+    vault.init(&owner, &usdc_address, &None, &Some(0));
+
+    // Even a deposit of 1 must work
+    let new_balance = vault.deposit(&1);
+    assert_eq!(new_balance, 1);
+    assert_eq!(vault.balance(), 1);
 }
 
 #[test]
