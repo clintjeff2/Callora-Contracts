@@ -43,6 +43,7 @@ pub struct VaultMeta {
 pub enum StorageKey {
     Meta,
     AllowedDepositors,
+    ApiPrice(Symbol),
 }
 
 #[contract]
@@ -75,7 +76,7 @@ impl CalloraVault {
     }
 
     /// Check if the caller is authorized to deposit (owner or allowed depositor).
-    pub fn is_authorized_depositor(env: Env, caller: Address) -> bool {
+    fn is_authorized_depositor(env: Env, caller: Address) -> bool {
         let meta = Self::get_meta(env.clone());
         // Owner is always authorized
         if caller == meta.owner {
@@ -175,7 +176,7 @@ impl CalloraVault {
         caller.require_auth();
 
         assert!(
-            Self::is_authorized_depositor(&env, &caller),
+            Self::is_authorized_depositor(env.clone(), caller.clone()),
             "unauthorized: only owner or allowed depositor can set price"
         );
 
