@@ -775,7 +775,10 @@ fn init_insufficient_usdc_balance_fails() {
     fund_vault(&usdc_admin, &contract_id, 50);
 
     let result = client.try_init(&owner, &usdc_token, &Some(100), &None, &None, &None);
-    assert!(result.is_err(), "expected error when initial_balance exceeds contract USDC");
+    assert!(
+        result.is_err(),
+        "expected error when initial_balance exceeds contract USDC"
+    );
 }
 
 #[test]
@@ -802,7 +805,14 @@ fn init_with_revenue_pool_and_get_revenue_pool() {
     let (usdc_token, _, _) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    client.init(&owner, &usdc_token, &None, &None, &Some(revenue_pool.clone()), &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &None,
+        &None,
+        &Some(revenue_pool.clone()),
+        &None,
+    );
 
     let retrieved_pool = client.get_revenue_pool();
     assert_eq!(retrieved_pool, Some(revenue_pool));
