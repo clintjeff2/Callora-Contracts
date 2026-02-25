@@ -385,6 +385,7 @@ fn allowed_depositor_can_set_price() {
 fn unauthorized_cannot_set_price() {
     let env = Env::default();
     let owner = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
@@ -448,12 +449,12 @@ fn test_transfer_ownership_not_owner() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
-    let api_id = Symbol::new(&env, "unset_api");
-
-    let price = client.get_price(&api_id);
-    assert_eq!(price, None);
+    // No auth for owner — transfer_ownership requires current owner to authorize
+    env.mock_auths(&[]);
+    client.transfer_ownership(&new_owner);
 }
 
 #[test]
