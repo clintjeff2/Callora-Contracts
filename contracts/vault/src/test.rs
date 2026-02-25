@@ -40,6 +40,17 @@ fn init_and_balance() {
 }
 
 #[test]
+fn init_default_zero_balance() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &None);
+    assert_eq!(client.balance(), 0);
+}
+
+#[test]
 fn deposit_and_deduct() {
     let env = Env::default();
     let owner = Address::generate(&env);
@@ -52,7 +63,7 @@ fn deposit_and_deduct() {
     client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
 
-    client.deduct(&50);
+    client.deduct(&owner, &50);
     assert_eq!(client.balance(), 250);
 }
 
@@ -270,6 +281,13 @@ fn set_metadata_emits_event() {
 fn update_metadata_and_verify() {
     let env = Env::default();
     let owner = Address::generate(&env);
+#[test]
+fn test_transfer_ownership() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
@@ -360,6 +378,41 @@ fn unauthorized_cannot_set_metadata() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let unauthorized = Address::generate(&env);
+    // transfer ownership via client
+    client.transfer_ownership(&new_owner);
+
+    let transfer_event = env
+        .events()
+        .all()
+        .into_iter()
+        .find(|e| {
+            e.0 == contract_id && {
+                let topics = &e.1;
+                if !topics.is_empty() {
+                    let topic_name: Symbol = topics.get(0).unwrap().into_val(&env);
+                    topic_name == Symbol::new(&env, "transfer_ownership")
+                } else {
+                    false
+                }
+            }
+        })
+        .expect("expected transfer event");
+
+    let topics = &transfer_event.1;
+    let topic_old_owner: Address = topics.get(1).unwrap().into_val(&env);
+    assert!(topic_old_owner == owner);
+
+    let topic_new_owner: Address = topics.get(2).unwrap().into_val(&env);
+    assert!(topic_new_owner == new_owner);
+}
+
+#[test]
+#[should_panic(expected = "new_owner must be different from current owner")]
+fn test_transfer_ownership_same_address_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
@@ -611,3 +664,36 @@ fn multiple_offerings_can_have_metadata() {
     assert_eq!(client.get_metadata(&offering3), Some(metadata3));
 }
 
+    // This should panic because new_owner is the same as current owner
+    client.transfer_ownership(&owner);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_ownership_not_owner() {
+    let env = Env::default();
+
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let _not_owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    // Mock auth for init
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &owner,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "init",
+            args: (&owner, &Some(100i128)).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.init(&owner, &Some(100));
+
+    env.mock_auths(&[]); // Clear mock auths so subsequent calls require explicit valid signatures
+
+    // This should panic because neither `owner` nor `not_owner` has provided a valid mock signature.
+    client.transfer_ownership(&new_owner);
+}
