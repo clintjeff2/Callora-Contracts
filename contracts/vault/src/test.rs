@@ -22,7 +22,6 @@ fn create_vault(env: &Env) -> (Address, CalloraVaultClient<'_>) {
 }
 
 fn fund_vault(
-    _env: &Env,
     usdc_admin_client: &token::StellarAssetClient,
     vault_address: &Address,
     amount: i128,
