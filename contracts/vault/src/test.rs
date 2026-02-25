@@ -868,7 +868,14 @@ fn fuzz_deposit_and_deduct() {
     // Pre-fund owner for deposits in the loop
     usdc_admin.mint(&owner, &250_000);
     usdc_client.approve(&owner, &vault_address, &250_000, &10_000);
-    vault.init(&owner, &usdc_address, &Some(initial_balance), &None, &None, &None);
+    vault.init(
+        &owner,
+        &usdc_address,
+        &Some(initial_balance),
+        &None,
+        &None,
+        &None,
+    );
     let mut expected = initial_balance;
     let mut rng = rand::thread_rng();
 
