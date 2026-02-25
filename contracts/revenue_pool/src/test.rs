@@ -145,3 +145,94 @@ fn receive_payment_emits_event() {
     let events = env.events().all();
     assert!(!events.is_empty());
 }
+
+#[test]
+#[should_panic(expected = "unauthorized: caller is not admin")]
+fn set_admin_unauthorized_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let (_, client) = create_pool(&env);
+    let (usdc, _, _) = create_usdc(&env, &admin);
+
+    client.init(&admin, &usdc);
+    client.set_admin(&attacker, &new_admin);
+}
+
+#[test]
+#[should_panic(expected = "revenue pool not initialized")]
+fn balance_before_init_panics() {
+    let env = Env::default();
+    let (_, client) = create_pool(&env);
+    client.balance();
+}
+
+#[test]
+fn distribute_negative_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let developer = Address::generate(&env);
+    let (_, client) = create_pool(&env);
+    let (usdc, _, _) = create_usdc(&env, &admin);
+
+    client.init(&admin, &usdc);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.distribute(&admin, &developer, &-1);
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
+fn receive_payment_from_non_vault() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let (_, client) = create_pool(&env);
+    let (usdc, _, _) = create_usdc(&env, &admin);
+
+    client.init(&admin, &usdc);
+    client.receive_payment(&admin, &250, &false);
+
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+/// Full lifecycle test: init, get_admin, balance, distribute, receive_payment, set_admin.
+#[test]
+fn full_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let developer = Address::generate(&env);
+    let (pool_addr, client) = create_pool(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &admin);
+
+    // Init
+    client.init(&admin, &usdc_address);
+    assert_eq!(client.get_admin(), admin);
+
+    // Fund and check balance
+    fund_pool(&usdc_admin, &pool_addr, 1000);
+    assert_eq!(client.balance(), 1000);
+
+    // Distribute
+    client.distribute(&admin, &developer, &400);
+    assert_eq!(usdc_client.balance(&developer), 400);
+    assert_eq!(client.balance(), 600);
+
+    // Receive payment event
+    client.receive_payment(&admin, &100, &true);
+
+    // Set admin
+    client.set_admin(&admin, &new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+
+    // New admin can distribute
+    client.distribute(&new_admin, &developer, &100);
+    assert_eq!(usdc_client.balance(&developer), 500);
+    assert_eq!(client.balance(), 500);
+}
