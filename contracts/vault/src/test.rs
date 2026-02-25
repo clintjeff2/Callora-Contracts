@@ -519,7 +519,7 @@ fn test_multiple_depositors() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
-let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
     env.mock_all_auths();
 
     let dep1 = Address::generate(&env);
