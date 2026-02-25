@@ -252,7 +252,7 @@ fn deduct_reduces_balance() {
 
     env.mock_all_auths();
     client.init(&owner, &usdc, &Some(100), &None);
-    client.deposit(&200);
+    client.deposit(&owner, &200);
     assert_eq!(client.balance(), 300);
 
     let returned = client.deduct(&caller, &50, &None);
@@ -592,6 +592,57 @@ fn batch_deduct_multiple_items() {
     let caller = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
+    env.mock_all_auths();
+
+    let dep1 = Address::generate(&env);
+    let dep2 = Address::generate(&env);
+
+    // Use as_contract to call the functions directly and capture events
+    let contract_events = env.as_contract(&contract_id, || {
+        CalloraVault::init(env.clone(), owner.clone(), usdc_address.clone(), None, None);
+        CalloraVault::deposit(env.clone(), dep1.clone(), 100);
+        CalloraVault::deposit(env.clone(), dep2.clone(), 200);
+
+        env.events().all()
+    });
+
+    assert_eq!(client.balance(), 300);
+
+    // Verify events: init + 2 deposits
+    assert_eq!(contract_events.len(), 3);
+
+    // Event 1: Init event
+    let event0 = contract_events.get(0).unwrap();
+    let topic0_0: Symbol = event0.1.get(0).unwrap().into_val(&env);
+    assert_eq!(topic0_0, Symbol::new(&env, "init"));
+
+    // Event 2: deposit from dep1
+    let event1 = contract_events.get(1).unwrap();
+    let topic1_0: Symbol = event1.1.get(0).unwrap().into_val(&env);
+    let topic1_1: Address = event1.1.get(1).unwrap().into_val(&env);
+    let data1: i128 = event1.2.into_val(&env);
+    assert_eq!(topic1_0, Symbol::new(&env, "deposit"));
+    assert_eq!(topic1_1, dep1);
+    assert_eq!(data1, 100);
+
+    // Event 3: deposit from dep2
+    let event2 = contract_events.get(2).unwrap();
+    let topic2_0: Symbol = event2.1.get(0).unwrap().into_val(&env);
+    let topic2_1: Address = event2.1.get(1).unwrap().into_val(&env);
+    let data2: i128 = event2.2.into_val(&env);
+    assert_eq!(topic2_0, Symbol::new(&env, "deposit"));
+    assert_eq!(topic2_1, dep2);
+    assert_eq!(data2, 200);
+}
+
+#[test]
+fn batch_deduct_success() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, _) = create_usdc(&env, &owner);
     let usdc_token = Address::generate(&env);
 
     env.mock_all_auths();
