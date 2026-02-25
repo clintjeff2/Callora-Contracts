@@ -1,3 +1,5 @@
+//! Vault contract unit tests (deposits, access control, API pricing).
+
 extern crate std;
 
 use super::*;
