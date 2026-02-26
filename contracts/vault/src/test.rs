@@ -287,7 +287,7 @@ fn deduct_exact_balance_succeeds() {
 fn deduct_event_contains_request_id() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let depositor = Address::generate(&env);
+    let caller = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
@@ -645,12 +645,6 @@ fn withdraw_reduces_balance() {
 fn withdraw_insufficient_balance_fails() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-
-    let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
@@ -967,12 +961,8 @@ fn batch_deduct_all_succeed() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
 
-    // Initialize with balance of 100
-    client.init(&owner, &Some(100));
-    assert_eq!(client.balance(), 100);
-
-    // Mock the owner as the invoker
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 60);
     client.init(&owner, &usdc_address, &Some(60), &None, &None, &None);
@@ -1004,7 +994,6 @@ fn batch_deduct_all_revert() {
     let env = Env::default();
 
     let owner = Address::generate(&env);
-    let new_owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
@@ -1039,6 +1028,7 @@ fn batch_deduct_revert_preserves_balance() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 25);
