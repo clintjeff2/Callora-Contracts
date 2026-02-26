@@ -43,6 +43,7 @@ pub struct VaultMeta {
 pub enum StorageKey {
     Meta,
     AllowedDepositors,
+    ApiPrice(Symbol),
     Paused,
 }
 
@@ -81,7 +82,7 @@ impl CalloraVault {
     }
 
     /// Check if the caller is authorized to deposit (owner or allowed depositor).
-    pub fn is_authorized_depositor(env: Env, caller: Address) -> bool {
+    fn is_authorized_depositor(env: Env, caller: Address) -> bool {
         let meta = Self::get_meta(env.clone());
         // Owner is always authorized
         if caller == meta.owner {
@@ -197,6 +198,29 @@ impl CalloraVault {
         meta.balance -= amount;
         env.storage().instance().set(&StorageKey::Meta, &meta);
         meta.balance
+    }
+
+    /// Set the price per API call (in smallest USDC units) for a given API ID.
+    /// Callable by the owner or allowed depositor (backend/admin).
+    pub fn set_price(env: Env, caller: Address, api_id: Symbol, price: i128) {
+        caller.require_auth();
+
+        assert!(
+            Self::is_authorized_depositor(env.clone(), caller.clone()),
+            "unauthorized: only owner or allowed depositor can set price"
+        );
+
+        env.storage()
+            .instance()
+            .set(&StorageKey::ApiPrice(api_id), &price);
+    }
+
+    /// Get the configured price per API call (in smallest USDC units) for a given API ID.
+    /// Returns `None` if no price has been set for this API.
+    pub fn get_price(env: Env, api_id: Symbol) -> Option<i128> {
+        env.storage()
+            .instance()
+            .get::<StorageKey, i128>(&StorageKey::ApiPrice(api_id))
     }
 
     /// Return current balance.

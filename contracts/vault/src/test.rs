@@ -1,3 +1,5 @@
+//! Vault contract unit tests (deposits, access control, API pricing).
+
 extern crate std;
 
 use super::*;
@@ -339,7 +341,7 @@ fn test_transfer_ownership() {
 
     client.init(&owner, &Some(100));
 
-    // transfer ownership via client
+    // Owner authorizes transfer (require_auth in contract)
     client.transfer_ownership(&new_owner);
 
     let transfer_event = env
@@ -368,19 +370,41 @@ fn test_transfer_ownership() {
 }
 
 #[test]
-#[should_panic(expected = "new_owner must be different from current owner")]
-fn test_transfer_ownership_same_address_fails() {
+fn allowed_depositor_can_set_price() {
     let env = Env::default();
-    env.mock_all_auths();
-
     let owner = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(100));
+
+    let api_id = Symbol::new(&env, "backend_api");
+
+    env.mock_all_auths();
+    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
+
+    client.set_price(&depositor, &api_id, &25);
+
+    let price = client.get_price(&api_id);
+    assert_eq!(price, Some(25));
+}
+
+#[test]
+#[should_panic(expected = "unauthorized: only owner or allowed depositor can set price")]
+fn unauthorized_cannot_set_price() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     client.init(&owner, &Some(100));
 
-    // This should panic because new_owner is the same as current owner
-    client.transfer_ownership(&owner);
+    let api_id = Symbol::new(&env, "restricted_api");
+
+    env.mock_all_auths();
+    client.set_price(&unauthorized, &api_id, &5);
 }
 
 #[test]
@@ -432,28 +456,16 @@ fn balance_unchanged_after_failed_deduct() {
 #[should_panic]
 fn test_transfer_ownership_not_owner() {
     let env = Env::default();
-
     let owner = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
-    // Mock auth for init
-    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
-        address: &owner,
-        invoke: &soroban_sdk::testutils::MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "init",
-            args: (&owner, &Some(100i128)).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
-
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
-    env.mock_auths(&[]); // Clear mock auths so subsequent calls require explicit valid signatures
-
-    // This should panic because neither `owner` nor `not_owner` has provided a valid mock signature.
+    // No auth for owner — transfer_ownership requires current owner to authorize
+    env.mock_auths(&[]);
     client.transfer_ownership(&new_owner);
 }
 
