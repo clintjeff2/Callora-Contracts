@@ -30,6 +30,7 @@
 
 #![no_std]
 
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Symbol};
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol, Vec};
 
 #[contracttype]
@@ -39,9 +40,20 @@ pub struct VaultMeta {
     pub balance: i128,
 }
 
+/// Maximum allowed length for metadata strings (IPFS CID or URI).
+/// IPFS CIDv1 (base32) is typically ~59 chars, CIDv0 is 46 chars.
+/// HTTPS URIs can vary, but we cap at 256 chars to prevent storage abuse.
+/// This limit balances flexibility with storage cost constraints.
+pub const MAX_METADATA_LENGTH: u32 = 256;
+
 #[contracttype]
 pub enum StorageKey {
     Meta,
+    AllowedDepositor,
+    /// Offering metadata: maps offering_id (String) -> metadata (String)
+    /// The metadata string typically contains an IPFS CID (e.g., "QmXxx..." or "bafyxxx...")
+    /// or an HTTPS URI (e.g., "https://example.com/metadata/offering123.json")
+    OfferingMetadata(String),
     AllowedDepositors,
     ApiPrice(Symbol),
     Paused,
@@ -226,6 +238,141 @@ impl CalloraVault {
     /// Return current balance.
     pub fn balance(env: Env) -> i128 {
         Self::get_meta(env).balance
+    }
+
+    // ========================================================================
+    // Offering Metadata Management
+    // ========================================================================
+
+    /// Set metadata for an offering. Only the owner (issuer) can set metadata.
+    ///
+    /// # Parameters
+    /// - `caller`: Must be the vault owner (authenticated via require_auth)
+    /// - `offering_id`: Unique identifier for the offering (e.g., "offering-001")
+    /// - `metadata`: Off-chain metadata reference (IPFS CID or HTTPS URI)
+    ///
+    /// # Metadata Format
+    /// The metadata string should contain:
+    /// - IPFS CID (v0): e.g., "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco"
+    /// - IPFS CID (v1): e.g., "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
+    /// - HTTPS URI: e.g., "https://example.com/metadata/offering123.json"
+    ///
+    /// # Off-chain Usage Pattern
+    /// Clients should:
+    /// 1. Call `get_metadata(offering_id)` to retrieve the reference
+    /// 2. If IPFS CID: Fetch from IPFS gateway (e.g., https://ipfs.io/ipfs/{CID})
+    /// 3. If HTTPS URI: Fetch directly via HTTP GET
+    /// 4. Parse the JSON metadata (expected fields: name, description, image, etc.)
+    ///
+    /// # Storage Limits
+    /// - Maximum metadata length: 256 characters
+    /// - Exceeding this limit will cause a panic
+    ///
+    /// # Events
+    /// Emits a "metadata_set" event with topics: (metadata_set, offering_id, caller)
+    /// and data: metadata string
+    ///
+    /// # Errors
+    /// - Panics if caller is not the owner
+    /// - Panics if metadata exceeds MAX_METADATA_LENGTH
+    /// - Panics if offering_id already has metadata (use update_metadata instead)
+    pub fn set_metadata(
+        env: Env,
+        caller: Address,
+        offering_id: String,
+        metadata: String,
+    ) -> String {
+        caller.require_auth();
+        Self::require_owner(&env, &caller);
+
+        // Validate metadata length
+        let metadata_len = metadata.len();
+        assert!(
+            metadata_len <= MAX_METADATA_LENGTH,
+            "metadata exceeds maximum length of {} characters",
+            MAX_METADATA_LENGTH
+        );
+
+        // Check if metadata already exists
+        let key = StorageKey::OfferingMetadata(offering_id.clone());
+        assert!(
+            !env.storage().instance().has(&key),
+            "metadata already exists for this offering; use update_metadata to modify"
+        );
+
+        // Store metadata
+        env.storage().instance().set(&key, &metadata);
+
+        // Emit event: topics = (metadata_set, offering_id, caller), data = metadata
+        env.events().publish(
+            (Symbol::new(&env, "metadata_set"), offering_id, caller),
+            metadata.clone(),
+        );
+
+        metadata
+    }
+
+    /// Update existing metadata for an offering. Only the owner (issuer) can update.
+    ///
+    /// # Parameters
+    /// - `caller`: Must be the vault owner (authenticated via require_auth)
+    /// - `offering_id`: Unique identifier for the offering
+    /// - `metadata`: New off-chain metadata reference (IPFS CID or HTTPS URI)
+    ///
+    /// # Events
+    /// Emits a "metadata_updated" event with topics: (metadata_updated, offering_id, caller)
+    /// and data: (old_metadata, new_metadata) tuple
+    ///
+    /// # Errors
+    /// - Panics if caller is not the owner
+    /// - Panics if metadata exceeds MAX_METADATA_LENGTH
+    /// - Panics if offering_id has no existing metadata (use set_metadata first)
+    pub fn update_metadata(
+        env: Env,
+        caller: Address,
+        offering_id: String,
+        metadata: String,
+    ) -> String {
+        caller.require_auth();
+        Self::require_owner(&env, &caller);
+
+        // Validate metadata length
+        let metadata_len = metadata.len();
+        assert!(
+            metadata_len <= MAX_METADATA_LENGTH,
+            "metadata exceeds maximum length of {} characters",
+            MAX_METADATA_LENGTH
+        );
+
+        // Check if metadata exists
+        let key = StorageKey::OfferingMetadata(offering_id.clone());
+        let old_metadata: String = env.storage().instance().get(&key).unwrap_or_else(|| {
+            panic!("no metadata exists for this offering; use set_metadata first")
+        });
+
+        // Update metadata
+        env.storage().instance().set(&key, &metadata);
+
+        // Emit event: topics = (metadata_updated, offering_id, caller), data = (old, new)
+        env.events().publish(
+            (Symbol::new(&env, "metadata_updated"), offering_id, caller),
+            (old_metadata, metadata.clone()),
+        );
+
+        metadata
+    }
+
+    /// Get metadata for an offering. Returns None if no metadata is set.
+    ///
+    /// # Parameters
+    /// - `offering_id`: Unique identifier for the offering
+    ///
+    /// # Returns
+    /// - `Some(metadata)` if metadata exists
+    /// - `None` if no metadata has been set for this offering
+    pub fn get_metadata(env: Env, offering_id: String) -> Option<String> {
+        let key = StorageKey::OfferingMetadata(offering_id);
+        env.storage().instance().get(&key)
     }
 
     pub fn transfer_ownership(env: Env, new_owner: Address) {

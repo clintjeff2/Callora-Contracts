@@ -16,6 +16,13 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
   - `deposit(caller, amount)` — owner or allowed depositor increases ledger balance
   - `deduct(amount)` — decrease balance for an API call (backend uses this after metering usage)
   - `balance()` — current ledger balance
+  - `set_metadata(caller, offering_id, metadata)` — owner-only; attach off-chain metadata reference (IPFS CID or URI) to an offering
+  - `update_metadata(caller, offering_id, metadata)` — owner-only; update existing offering metadata
+  - `get_metadata(offering_id)` — retrieve metadata reference for an offering
+- **`callora-revenue-pool`** contract (settlement):
+  - `init(admin, usdc_token)` — set admin and USDC token
+  - `distribute(caller, to, amount)` — admin sends USDC from this contract to a developer
+  - Flow: vault deduct → vault transfers USDC to revenue pool → admin calls `distribute(to, amount)`
   - `set_price(caller, api_id, price)` — owner or allowed depositor sets the **price per API call** for `api_id` in smallest USDC units (e.g. 1 = 1 cent)
   - `get_price(api_id)` — returns `Option<i128>` with the configured price per call for `api_id`
 
@@ -60,11 +67,23 @@ All tests use `#[should_panic]` assertions for guaranteed validation. This resol
 3. **Build WASM (for deployment):**
 
    ```bash
-   cd contracts/vault
-   cargo build --target wasm32-unknown-unknown --release
+   # Build vault contract
+   cargo build --target wasm32-unknown-unknown --release -p callora-vault
+   
+   # Or use the convenience script from project root
+   ./scripts/check-wasm-size.sh
    ```
 
-   Or use `soroban contract build` if you use the Soroban CLI workflow.
+   The vault contract WASM binary is optimized to ~17.5KB (17,926 bytes), well under Soroban's 64KB limit. The release profile in `Cargo.toml` uses aggressive size optimizations:
+   - `opt-level = "z"` - optimize for size
+   - `lto = true` - link-time optimization
+   - `strip = "symbols"` - remove debug symbols
+   - `codegen-units = 1` - better optimization at cost of compile time
+
+   To verify the WASM size stays under 64KB, run:
+   ```bash
+   ./scripts/check-wasm-size.sh
+   ```
 
 ## Development
 
