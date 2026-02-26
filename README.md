@@ -25,6 +25,20 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
 
 Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use. Approximate gas/cost notes: [BENCHMARKS.md](BENCHMARKS.md). Upgrade and migration: [UPGRADE.md](UPGRADE.md).
 
+We've enhanced the `CalloraVault` contract with robust input validation to prevent invalid transactions:
+
+- **Amount Validation**: Both `deposit()` and `deduct()` now enforce `amount > 0`, rejecting zero and negative values before any state changes
+- **Improved Error Messages**: Enhanced panic messages provide clear context (e.g., "insufficient balance: X requested but only Y available")
+- **Early Validation**: Checks occur before storage writes, minimizing gas waste on invalid transactions
+- **Comprehensive Test Coverage**: Added 5 new test cases covering edge cases:
+  - `deposit_zero_panics()` — validates zero deposit rejection
+  - `deposit_negative_panics()` — validates negative deposit rejection
+  - `deduct_zero_panics()` — validates zero deduction rejection
+  - `deduct_negative_panics()` — validates negative deduction rejection
+  - `deduct_exceeds_balance_panics()` — validates insufficient balance checks with detailed error messages
+
+All tests use `#[should_panic]` assertions for guaranteed validation. This resolves issue #9.
+
 ## Local setup
 
 1. **Prerequisites:**
@@ -130,6 +144,13 @@ callora-contracts/
 └── README.md
 >>>>>>> b0229e42e4d4517da9f548ea3e374a5886304bf2
 ```
+
+## Security Notes
+
+- **Checked arithmetic**: All balance mutations use `checked_add` / `checked_sub` — overflow and underflow cause an immediate panic rather than silent wrapping.
+- **Input validation**: `deposit` and `deduct` reject zero and negative amounts (`amount > 0`). `init` rejects negative initial balances.
+- **`overflow-checks`**: Enabled for **both** `[profile.dev]` and `[profile.release]` in the workspace `Cargo.toml`, ensuring overflow bugs are caught in tests as well as production.
+- **Max balance**: `i128::MAX` (≈ 1.7 × 10³⁸ stroops). Deposits that would exceed this limit will panic.
 
 ## Deployment
 
