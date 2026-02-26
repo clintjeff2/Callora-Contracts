@@ -175,6 +175,10 @@ callora-contracts/
 - **`overflow-checks`**: Enabled for **both** `[profile.dev]` and `[profile.release]` in the workspace `Cargo.toml`, ensuring overflow bugs are caught in tests as well as production.
 - **Max balance**: `i128::MAX` (≈ 1.7 × 10³⁸ stroops). Deposits that would exceed this limit will panic.
 
+## 🔐 Security
+
+See [SECURITY.md](SECURITY.md) for the Vault Security Checklist and audit recommendations.
+
 ## Deployment
 
 Use Soroban CLI or Stellar Laboratory to deploy the built WASM to testnet/mainnet and configure the vault (owner, optional initial balance and optional pricing). The backend will:
