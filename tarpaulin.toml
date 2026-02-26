@@ -30,4 +30,4 @@ lib           = true
 timeout       = "120s"
 
 # Exclude auto-generated or build-only source files from the line counts.
-exclude-files = ["*/build.rs"]
+exclude-files = ["*/build.rs", "hidden/*"]

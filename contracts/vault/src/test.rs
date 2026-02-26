@@ -1127,7 +1127,14 @@ fn large_balance_init_and_deduct() {
 
     let large_balance: i128 = i128::MAX / 2;
     fund_vault(&usdc_admin, &contract_id, large_balance);
-    client.init(&owner, &usdc_token, &Some(large_balance), &None, &None, &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &Some(large_balance),
+        &None,
+        &None,
+        &None,
+    );
     assert_eq!(client.balance(), large_balance);
 
     let deduct_amount: i128 = i128::MAX / 4;
@@ -1150,7 +1157,14 @@ fn large_balance_deduct_entire_balance() {
 
     let large_balance: i128 = i128::MAX;
     fund_vault(&usdc_admin, &contract_id, large_balance);
-    client.init(&owner, &usdc_token, &Some(large_balance), &None, &None, &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &Some(large_balance),
+        &None,
+        &None,
+        &None,
+    );
     assert_eq!(client.balance(), large_balance);
 
     let remaining = client.deduct(&caller, &large_balance, &None);
@@ -1173,7 +1187,14 @@ fn large_balance_sequential_deducts() {
 
     let large_balance: i128 = 1_000_000_000_000_000_000;
     fund_vault(&usdc_admin, &contract_id, large_balance);
-    client.init(&owner, &usdc_token, &Some(large_balance), &None, &None, &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &Some(large_balance),
+        &None,
+        &None,
+        &None,
+    );
 
     let first = client.deduct(&caller, &400_000_000_000_000_000, &None);
     assert_eq!(first, 600_000_000_000_000_000);
@@ -1198,14 +1219,30 @@ fn large_batch_deduct_correctness() {
 
     let large_balance: i128 = i128::MAX / 2;
     fund_vault(&usdc_admin, &contract_id, large_balance);
-    client.init(&owner, &usdc_token, &Some(large_balance), &None, &None, &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &Some(large_balance),
+        &None,
+        &None,
+        &None,
+    );
 
     let chunk = large_balance / 3;
     let items = soroban_sdk::vec![
         &env,
-        DeductItem { amount: chunk, request_id: None },
-        DeductItem { amount: chunk, request_id: None },
-        DeductItem { amount: chunk, request_id: None },
+        DeductItem {
+            amount: chunk,
+            request_id: None
+        },
+        DeductItem {
+            amount: chunk,
+            request_id: None
+        },
+        DeductItem {
+            amount: chunk,
+            request_id: None
+        },
     ];
 
     let remaining = client.batch_deduct(&caller, &items);
@@ -1233,7 +1270,10 @@ fn deposit_overflow_panics() {
     let usdc_client = token::Client::new(&env, &usdc_token);
     usdc_client.approve(&depositor, &contract_id, &100, &1000);
     let result = client.try_deposit(&depositor, &100);
-    assert!(result.is_err(), "expected overflow on deposit exceeding i128::MAX");
+    assert!(
+        result.is_err(),
+        "expected overflow on deposit exceeding i128::MAX"
+    );
 }
 
 #[test]
@@ -1249,9 +1289,19 @@ fn large_deduct_exceeding_balance_fails() {
 
     let large_balance: i128 = i128::MAX / 2;
     fund_vault(&usdc_admin, &contract_id, large_balance);
-    client.init(&owner, &usdc_token, &Some(large_balance), &None, &None, &None);
+    client.init(
+        &owner,
+        &usdc_token,
+        &Some(large_balance),
+        &None,
+        &None,
+        &None,
+    );
 
     let result = client.try_deduct(&caller, &(large_balance + 1), &None);
-    assert!(result.is_err(), "expected error when deducting more than large balance");
+    assert!(
+        result.is_err(),
+        "expected error when deducting more than large balance"
+    );
     assert_eq!(client.balance(), large_balance);
 }
