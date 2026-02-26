@@ -236,3 +236,34 @@ fn full_lifecycle() {
     assert_eq!(usdc_client.balance(&developer), 500);
     assert_eq!(client.balance(), 500);
 }
+
+#[test]
+fn get_admin_before_init_fails() {
+    let env = Env::default();
+    let (_, client) = create_pool(&env);
+    let result = client.try_get_admin();
+    assert!(result.is_err(), "expected error when pool not initialized");
+}
+
+#[test]
+fn balance_before_init_fails() {
+    let env = Env::default();
+    let (_, client) = create_pool(&env);
+    let result = client.try_balance();
+    assert!(result.is_err(), "expected error when pool not initialized");
+}
+
+#[test]
+fn set_admin_unauthorized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let (_, client) = create_pool(&env);
+    let (usdc, _, _) = create_usdc(&env, &admin);
+
+    client.init(&admin, &usdc);
+    let result = client.try_set_admin(&intruder, &new_admin);
+    assert!(result.is_err(), "expected error for unauthorized set_admin");
+}
