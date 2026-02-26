@@ -1079,3 +1079,31 @@ fn owner_unchanged_after_deposit_and_deduct() {
 
     assert_eq!(client.get_meta().owner, owner);
 }
+
+#[test]
+fn batch_deduct_exceeds_max_deduct_fails() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let caller = Address::generate(&env);
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+    let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
+
+    env.mock_all_auths();
+    fund_vault(&usdc_admin, &contract_id, 1000);
+    client.init(&owner, &usdc_token, &Some(1000), &None, &None, &Some(50));
+
+    let items = soroban_sdk::vec![
+        &env,
+        DeductItem {
+            amount: 100,
+            request_id: None,
+        },
+    ];
+
+    let result = client.try_batch_deduct(&caller, &items);
+    assert!(
+        result.is_err(),
+        "expected error for amount exceeding max_deduct"
+    );
+}
