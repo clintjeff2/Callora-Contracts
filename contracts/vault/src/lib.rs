@@ -42,27 +42,7 @@ pub struct CalloraVault;
 impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance and minimum deposit.
     /// If initial_balance > 0, the contract must already hold at least that much USDC (e.g. deployer transferred in first).
-    /// Initialize vault for an owner with optional initial balance and minimum deposit.
-    /// If initial_balance > 0, the contract must already hold at least that much USDC (e.g. deployer transferred in first).
     /// Emits an "init" event with the owner address and initial balance.
-    ///
-    /// # Arguments
-    /// * `revenue_pool` – Optional address to receive USDC on each deduct (e.g. settlement contract). If None, USDC stays in vault.
-    /// * `max_deduct` – Optional cap per single deduct; if None, uses DEFAULT_MAX_DEDUCT (no cap).
-    pub fn init(
-        env: Env,
-        owner: Address,
-        usdc_token: Address,
-        initial_balance: Option<i128>,
-        min_deposit: Option<i128>,
-        revenue_pool: Option<Address>,
-        max_deduct: Option<i128>,
-    ) -> VaultMeta {
-        owner.require_auth();
-        if env.storage().instance().has(&Symbol::new(&env, META_KEY)) {
-    /// # Security Note
-    /// The `owner` address is required to authorize the initialization transaction via `owner.require_auth()`.
-    /// This prevents unauthorized parties from initializing the vault with a "zero" or unauthenticated owner.
     ///
     /// # Arguments
     /// * `revenue_pool` – Optional address to receive USDC on each deduct (e.g. settlement contract). If None, USDC stays in vault.
@@ -93,25 +73,11 @@ impl CalloraVault {
         if max_deduct_val <= 0 {
             panic!("max_deduct must be positive");
         }
-        if balance > 0 {
-            let usdc = token::Client::new(&env, &usdc_token);
-            let contract_balance = usdc.balance(&env.current_contract_address());
-            if contract_balance < balance {
-                panic!("insufficient USDC in contract for initial_balance");
-            }
-        }
-        let min_deposit_val = min_deposit.unwrap_or(0);
-        let max_deduct_val = max_deduct.unwrap_or(DEFAULT_MAX_DEDUCT);
-        if max_deduct_val <= 0 {
-            panic!("max_deduct must be positive");
-        }
         let meta = VaultMeta {
             owner: owner.clone(),
             balance,
             min_deposit: min_deposit_val,
-            min_deposit: min_deposit_val,
         };
-        // Persist metadata under both the literal key and the constant for safety.
         let inst = env.storage().instance();
         inst.set(&Symbol::new(&env, "meta"), &meta);
         inst.set(&Symbol::new(&env, META_KEY), &meta);
@@ -122,14 +88,7 @@ impl CalloraVault {
         }
         inst.set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
 
-        if let Some(pool) = revenue_pool {
-            inst.set(&Symbol::new(&env, REVENUE_POOL_KEY), &pool);
-        }
-        inst.set(&Symbol::new(&env, MAX_DEDUCT_KEY), &max_deduct_val);
-
         env.events()
-            .publish((Symbol::new(&env, "init"), owner), balance);
-
             .publish((Symbol::new(&env, "init"), owner), balance);
 
         meta
@@ -140,7 +99,7 @@ impl CalloraVault {
         env.storage()
             .instance()
             .get(&Symbol::new(&env, ADMIN_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"))
+            .expect("vault not initialized")
     }
 
     /// Replace the current admin. Only the existing admin may call this.
@@ -149,12 +108,6 @@ impl CalloraVault {
         let current_admin = Self::get_admin(env.clone());
         if caller != current_admin {
             panic!("unauthorized: caller is not admin");
-    /// Check if the caller is authorized to deposit (owner or allowed depositor).
-    fn is_authorized_depositor(env: Env, caller: Address) -> bool {
-        let meta = Self::get_meta(env.clone());
-        // Owner is always authorized
-        if caller == meta.owner {
-            return true;
         }
         let inst = env.storage().instance();
         inst.set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
@@ -165,7 +118,7 @@ impl CalloraVault {
         env.storage()
             .instance()
             .get(&Symbol::new(&env, MAX_DEDUCT_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"))
+            .expect("vault not initialized")
     }
 
     /// Return the revenue pool address if set (receives USDC on deduct).
@@ -177,66 +130,32 @@ impl CalloraVault {
     }
 
     /// Distribute accumulated USDC to a single developer address.
-    ///
-    /// # Access control
-    /// Only the admin (backend / multisig) may call this.
-    ///
-    /// # Arguments
-    /// * `caller` – Must be the current admin address.
-    /// * `to`     – Developer wallet to receive the USDC.
-    /// * `amount` – Amount in USDC micro-units (must be > 0 and ≤ vault balance).
-    ///
-    /// # Panics
-    /// * `"unauthorized: caller is not admin"` – caller is not the admin.
-    /// * `"amount must be positive"`           – amount is zero or negative.
-    /// * `"insufficient USDC balance"`         – vault holds less than amount.
-    ///
-    /// # Events
-    /// Emits topic `("distribute", to)` with data `amount` on success.
     pub fn distribute(env: Env, caller: Address, to: Address, amount: i128) {
-        // 1. Require on-chain signature from caller.
         caller.require_auth();
 
-        // 2. Only the registered admin may distribute.
         let admin = Self::get_admin(env.clone());
         if caller != admin {
             panic!("unauthorized: caller is not admin");
         }
 
-        // 3. Amount must be positive.
         if amount <= 0 {
             panic!("amount must be positive");
         }
 
-        // 4. Load the USDC token address.
-        let usdc_opt: Option<Address> = env.storage().instance().get(&Symbol::new(&env, USDC_KEY));
-        let usdc_address: Address = usdc_opt.unwrap_or_else(|| panic!("vault not initialized"));
-
+        let usdc_address: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, USDC_KEY))
+            .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
 
-        // 5. Check vault has enough USDC.
-        let vault_balance = usdc.balance(&env.current_contract_address());
-        if vault_balance < amount {
-            panic!("insufficient USDC balance");
-
-        let usdc = token::Client::new(&env, &usdc_address);
-
-        // 5. Check vault has enough USDC.
         let vault_balance = usdc.balance(&env.current_contract_address());
         if vault_balance < amount {
             panic!("insufficient USDC balance");
         }
 
-        // 6. Transfer USDC from vault to developer.
         usdc.transfer(&env.current_contract_address(), &to, &amount);
 
-        // 7. Emit distribute event.
-        env.events()
-            .publish((Symbol::new(&env, "distribute"), to), amount);
-        // 6. Transfer USDC from vault to developer.
-        usdc.transfer(&env.current_contract_address(), &to, &amount);
-
-        // 7. Emit distribute event.
         env.events()
             .publish((Symbol::new(&env, "distribute"), to), amount);
     }
@@ -246,13 +165,10 @@ impl CalloraVault {
         env.storage()
             .instance()
             .get(&Symbol::new(&env, META_KEY))
-            .get(&Symbol::new(&env, META_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"))
+            .expect("vault not initialized")
     }
 
     /// Deposit: user transfers USDC to the contract; contract increases internal balance.
-    /// Caller must have authorized the transfer (token transfer_from). Supports multiple depositors.
-    /// Emits a "deposit" event with the depositor address and amount.
     pub fn deposit(env: Env, from: Address, amount: i128) -> i128 {
         from.require_auth();
 
@@ -268,7 +184,6 @@ impl CalloraVault {
             .storage()
             .instance()
             .get(&Symbol::new(&env, USDC_KEY))
-            .expect("vault not initialized");
             .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer_from(
@@ -288,10 +203,7 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Deduct balance for an API call. Callable by authorized caller (e.g. backend).
-    /// Amount must not exceed max single deduct (see init / get_max_deduct).
-    /// If revenue pool is set, USDC is transferred to it; otherwise it remains in the vault.
-    /// Emits a "deduct" event with caller, optional request_id, amount, and new balance.
+    /// Deduct balance for an API call.
     pub fn deduct(env: Env, caller: Address, amount: i128, request_id: Option<Symbol>) -> i128 {
         caller.require_auth();
         let max_deduct = Self::get_max_deduct(env.clone());
@@ -318,9 +230,6 @@ impl CalloraVault {
     }
 
     /// Batch deduct: multiple (amount, optional request_id) in one transaction.
-    /// Each amount must not exceed max_deduct. Reverts entire batch if any check fails.
-    /// If revenue pool is set, total deducted USDC is transferred to it once.
-    /// Emits one "deduct" event per item.
     pub fn batch_deduct(env: Env, caller: Address, items: Vec<DeductItem>) -> i128 {
         caller.require_auth();
         let max_deduct = Self::get_max_deduct(env.clone());
@@ -331,13 +240,10 @@ impl CalloraVault {
         let mut running = meta.balance;
         for item in items.iter() {
             assert!(item.amount > 0, "amount must be positive");
-            assert!(
-                item.amount <= max_deduct,
-                "deduct amount exceeds max_deduct"
-            );
+            let within_limit = item.amount <= max_deduct;
+            assert!(within_limit, "deduct amount exceeds max_deduct");
             assert!(running >= item.amount, "insufficient balance");
             running -= item.amount;
-        }
         }
 
         let mut balance = meta.balance;
@@ -360,22 +266,12 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Withdraw from vault. Callable only by the vault owner; reduces balance and transfers USDC to owner.
+    /// Withdraw from vault. Callable only by the vault owner.
     pub fn withdraw(env: Env, amount: i128) -> i128 {
         let mut meta = Self::get_meta(env.clone());
         meta.owner.require_auth();
-        meta.owner.require_auth();
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
-
-        let usdc_address: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, USDC_KEY))
-            .expect("vault not initialized");
-        let usdc = token::Client::new(&env, &usdc_address);
-        usdc.transfer(&env.current_contract_address(), &meta.owner, &amount);
-
 
         let usdc_address: Address = env
             .storage()
@@ -396,7 +292,7 @@ impl CalloraVault {
         meta.balance
     }
 
-    /// Withdraw from vault to a designated address. Owner-only; transfers USDC to `to`.
+    /// Withdraw from vault to a designated address. Owner-only.
     pub fn withdraw_to(env: Env, to: Address, amount: i128) -> i128 {
         let mut meta = Self::get_meta(env.clone());
         meta.owner.require_auth();
@@ -407,7 +303,6 @@ impl CalloraVault {
             .storage()
             .instance()
             .get(&Symbol::new(&env, USDC_KEY))
-            .expect("vault not initialized");
             .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&env.current_contract_address(), &to, &amount);
