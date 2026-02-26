@@ -10,18 +10,29 @@ Soroban smart contracts for the Callora API marketplace: prepaid vault (USDC) an
 ## What’s included
 
 - **`callora-vault`** contract:
-  - `init(owner, usdc_token, initial_balance, min_deposit, revenue_pool, max_deduct)` — initialize vault; optional revenue pool (receives USDC on deduct), optional max single deduct cap
-  - `get_meta()`, `get_max_deduct()`, `get_revenue_pool()` — view config
-  - `deposit(from, amount)` — user transfers USDC to contract (transfer_from); increases ledger balance; amount must be ≥ min_deposit
-  - `deduct(caller, amount, request_id)` — decrease balance; amount ≤ max_deduct; if revenue_pool set, USDC is transferred to it
-  - `batch_deduct(caller, items)` — batch deduct with same rules; total USDC transferred to revenue_pool if set
-  - `withdraw(amount)` — owner-only; decreases balance and transfers USDC to owner
-  - `withdraw_to(to, amount)` — owner-only; decreases balance and transfers USDC to `to`
+  - `init(owner, initial_balance)` — initialize vault for an owner with optional initial balance
+  - `get_meta()` — view config (owner and current balance)
+  - `set_allowed_depositor(caller, depositor)` — owner-only; set or clear a backend/allowed depositor that can deposit and manage pricing
+  - `deposit(caller, amount)` — owner or allowed depositor increases ledger balance
+  - `deduct(amount)` — decrease balance for an API call (backend uses this after metering usage)
   - `balance()` — current ledger balance
+  - `set_metadata(caller, offering_id, metadata)` — owner-only; attach off-chain metadata reference (IPFS CID or URI) to an offering
+  - `update_metadata(caller, offering_id, metadata)` — owner-only; update existing offering metadata
+  - `get_metadata(offering_id)` — retrieve metadata reference for an offering
 - **`callora-revenue-pool`** contract (settlement):
   - `init(admin, usdc_token)` — set admin and USDC token
   - `distribute(caller, to, amount)` — admin sends USDC from this contract to a developer
   - Flow: vault deduct → vault transfers USDC to revenue pool → admin calls `distribute(to, amount)`
+  - `set_price(caller, api_id, price)` — owner or allowed depositor sets the **price per API call** for `api_id` in smallest USDC units (e.g. 1 = 1 cent)
+  - `get_price(api_id)` — returns `Option<i128>` with the configured price per call for `api_id`
+
+### API pricing resolution
+
+The backend resolves `(vault_id, api_id) -> price` as follows:
+
+1. Use the vault contract address as `vault_id`.
+2. Call `get_price(api_id)` on that vault.
+3. If a price is returned, use it as the per-call price (in smallest USDC units) before calling `deduct(amount)`.
 
 Events are emitted for init, deposit, deduct, withdraw, and withdraw_to. See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for indexer/frontend use. Approximate gas/cost notes: [BENCHMARKS.md](BENCHMARKS.md). Upgrade and migration: [UPGRADE.md](UPGRADE.md).
 
@@ -56,11 +67,23 @@ All tests use `#[should_panic]` assertions for guaranteed validation. This resol
 3. **Build WASM (for deployment):**
 
    ```bash
-   cd contracts/vault
-   cargo build --target wasm32-unknown-unknown --release
+   # Build vault contract
+   cargo build --target wasm32-unknown-unknown --release -p callora-vault
+   
+   # Or use the convenience script from project root
+   ./scripts/check-wasm-size.sh
    ```
 
-   Or use `soroban contract build` if you use the Soroban CLI workflow.
+   The vault contract WASM binary is optimized to ~17.5KB (17,926 bytes), well under Soroban's 64KB limit. The release profile in `Cargo.toml` uses aggressive size optimizations:
+   - `opt-level = "z"` - optimize for size
+   - `lto = true` - link-time optimization
+   - `strip = "symbols"` - remove debug symbols
+   - `codegen-units = 1` - better optimization at cost of compile time
+
+   To verify the WASM size stays under 64KB, run:
+   ```bash
+   ./scripts/check-wasm-size.sh
+   ```
 
 ## Development
 
@@ -152,8 +175,16 @@ callora-contracts/
 - **`overflow-checks`**: Enabled for **both** `[profile.dev]` and `[profile.release]` in the workspace `Cargo.toml`, ensuring overflow bugs are caught in tests as well as production.
 - **Max balance**: `i128::MAX` (≈ 1.7 × 10³⁸ stroops). Deposits that would exceed this limit will panic.
 
+## 🔐 Security
+
+See [SECURITY.md](SECURITY.md) for the Vault Security Checklist and audit recommendations.
+
 ## Deployment
 
-Use Soroban CLI or Stellar Laboratory to deploy the built WASM to testnet/mainnet and configure the vault (owner, optional initial balance). The backend will call `deduct` after metering API usage.
+Use Soroban CLI or Stellar Laboratory to deploy the built WASM to testnet/mainnet and configure the vault (owner, optional initial balance and optional pricing). The backend will:
+
+1. Call `get_price(api_id)` on the vault (`vault_id`) to fetch the price per call.
+2. Multiply by the number of billable calls to get the total amount.
+3. Call `deduct(amount)` on the same vault to charge the user.
 
 This repo is part of [Callora](https://github.com/your-org/callora). Frontend: `callora-frontend`. Backend: `callora-backend`.

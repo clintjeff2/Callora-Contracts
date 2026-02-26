@@ -65,6 +65,32 @@ Emitted when the owner withdraws to a designated address via `withdraw_to(to, am
 
 ---
 
+### `metadata_set`
+
+Emitted when metadata is set for an offering via `set_metadata(offering_id, metadata)`.
+
+| Field   | Location | Type   | Description   |
+|---------|----------|--------|---------------|
+| topic 0 | topics   | Symbol | `"metadata_set"` |
+| topic 1 | topics   | String | offering_id   |
+| topic 2 | topics   | Address| caller (owner/issuer) |
+| data    | data     | String | metadata (IPFS CID or URI) |
+
+---
+
+### `metadata_updated`
+
+Emitted when existing metadata is updated via `update_metadata(offering_id, metadata)`.
+
+| Field   | Location | Type   | Description   |
+|---------|----------|--------|---------------|
+| topic 0 | topics   | Symbol | `"metadata_updated"` |
+| topic 1 | topics   | String | offering_id   |
+| topic 2 | topics   | Address| caller (owner/issuer) |
+| data    | data     | (String, String) | (old_metadata, new_metadata) |
+
+---
+
 ## Not yet implemented
 
 - **OwnershipTransfer**: not present in current vault; would list old_owner, new_owner.
