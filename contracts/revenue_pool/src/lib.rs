@@ -20,15 +20,12 @@ impl RevenuePool {
     /// * `usdc_token` – Stellar USDC (or wrapped USDC) token contract address.
     pub fn init(env: Env, admin: Address, usdc_token: Address) {
         admin.require_auth();
-        if env.storage().instance().has(&Symbol::new(&env, ADMIN_KEY)) {
+        let inst = env.storage().instance();
+        if inst.has(&Symbol::new(&env, ADMIN_KEY)) {
             panic!("revenue pool already initialized");
         }
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, ADMIN_KEY), &admin);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, USDC_KEY), &usdc_token);
+        inst.set(&Symbol::new(&env, ADMIN_KEY), &admin);
+        inst.set(&Symbol::new(&env, USDC_KEY), &usdc_token);
 
         env.events()
             .publish((Symbol::new(&env, "init"), admin), usdc_token);
@@ -49,9 +46,8 @@ impl RevenuePool {
         if caller != current {
             panic!("unauthorized: caller is not admin");
         }
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
+        let inst = env.storage().instance();
+        inst.set(&Symbol::new(&env, ADMIN_KEY), &new_admin);
     }
 
     /// Placeholder: record that payment was received (e.g. from vault).

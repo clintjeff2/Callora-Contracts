@@ -270,10 +270,8 @@ impl CalloraVault {
         let mut running = meta.balance;
         for item in items.iter() {
             assert!(item.amount > 0, "amount must be positive");
-            assert!(
-                item.amount <= max_deduct,
-                "deduct amount exceeds max_deduct"
-            );
+            let within_limit = item.amount <= max_deduct;
+            assert!(within_limit, "deduct amount exceeds max_deduct");
             assert!(running >= item.amount, "insufficient balance");
             running -= item.amount;
         }
