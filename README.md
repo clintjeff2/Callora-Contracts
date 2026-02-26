@@ -88,6 +88,42 @@ All tests use `#[should_panic]` assertions for guaranteed validation. This resol
 ## Development
 
 Use one branch per issue or feature (e.g. `test/minimum-deposit-rejected`, `docs/vault-gas-notes`) to keep PRs small and reduce merge conflicts. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before pushing.
+<<<<<<< HEAD
+
+## Test coverage
+
+The project enforces a **minimum of 95 % line coverage** on every push and pull-request via GitHub Actions.
+
+### Run coverage locally
+
+```bash
+# First time only — the script auto-installs cargo-tarpaulin if absent
+./scripts/coverage.sh
+```
+
+The script will:
+
+1. Check for `cargo-tarpaulin`; install it automatically if it is missing.
+2. Run all tests with instrumentation according to `tarpaulin.toml`.
+3. Exit with a non-zero code if coverage drops below 95 %.
+4. Write reports to the `coverage/` directory (git-ignored).
+
+| Report file                      | Description                                     |
+| -------------------------------- | ----------------------------------------------- |
+| `coverage/tarpaulin-report.html` | Interactive per-file view — open in any browser |
+| `coverage/cobertura.xml`         | Cobertura XML consumed by CI                    |
+
+> **Tip:** You can also run `cargo tarpaulin` directly from the workspace root;
+> the settings in `tarpaulin.toml` are picked up automatically.
+
+### CI enforcement
+
+`.github/workflows/coverage.yml` runs on every push and pull-request.
+It installs tarpaulin, runs coverage, uploads the HTML report as a downloadable
+artefact, and posts a coverage summary table as a PR comment.
+A result below 95 % causes the workflow — and the required status check — to fail.
+=======
+>>>>>>> b0229e42e4d4517da9f548ea3e374a5886304bf2
 
 ## Project layout
 
@@ -95,6 +131,24 @@ Use one branch per issue or feature (e.g. `test/minimum-deposit-rejected`, `docs
 callora-contracts/
 ├── .github/workflows/
 │   └── ci.yml              # CI: fmt, clippy, test, WASM build
+<<<<<<< HEAD
+├── Cargo.toml                        # Workspace and release profile
+├── BENCHMARKS.md           # Vault operation gas/cost notes
+├── EVENT_SCHEMA.md         # Event names, topics, and payload types
+├── UPGRADE.md              # Vault upgrade and migration path
+├── tarpaulin.toml                    # cargo-tarpaulin config (≥ 95 % enforced)
+├── scripts/
+│   └── coverage.sh                   # One-command local coverage runner
+├── .github/
+│   └── workflows/
+│       └── coverage.yml              # CI: enforces 95 % on every push / PR
+└── contracts/
+    └── vault/
+        ├── Cargo.toml
+        └── src/
+            ├── lib.rs                # Contract logic
+            └── test.rs               # Unit tests (covers all code paths)
+=======
 ├── Cargo.toml              # Workspace and release profile
 ├── BENCHMARKS.md           # Vault operation gas/cost notes
 ├── EVENT_SCHEMA.md         # Event names, topics, and payload types
@@ -111,6 +165,7 @@ callora-contracts/
 │           ├── lib.rs      # Settlement contract
 │           └── test.rs     # Unit tests
 └── README.md
+>>>>>>> b0229e42e4d4517da9f548ea3e374a5886304bf2
 ```
 
 ## Security Notes
