@@ -43,6 +43,7 @@ pub struct VaultMeta {
 pub enum StorageKey {
     Meta,
     AllowedDepositors,
+    Paused,
 }
 
 #[contract]
@@ -161,10 +162,34 @@ impl CalloraVault {
         meta.balance
     }
 
+    /// Pause the vault. Only the owner may call this.
+    pub fn pause(env: Env, caller: Address) {
+        caller.require_auth();
+        Self::require_owner(env.clone(), caller);
+        env.storage().instance().set(&StorageKey::Paused, &true);
+    }
+
+    /// Unpause the vault. Only the owner may call this.
+    pub fn unpause(env: Env, caller: Address) {
+        caller.require_auth();
+        Self::require_owner(env.clone(), caller);
+        env.storage().instance().set(&StorageKey::Paused, &false);
+    }
+
+    /// Return whether the vault is currently paused.
+    pub fn paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&StorageKey::Paused)
+            .unwrap_or(false)
+    }
+
     /// Deduct balance for an API call. Only owner/authorized caller in production.
+    /// Panics if the vault is paused.
     pub fn deduct(env: Env, caller: Address, amount: i128) -> i128 {
         caller.require_auth();
         Self::require_owner(env.clone(), caller);
+        assert!(!Self::paused(env.clone()), "vault is paused");
 
         let mut meta = Self::get_meta(env.clone());
         assert!(amount > 0, "amount must be positive");

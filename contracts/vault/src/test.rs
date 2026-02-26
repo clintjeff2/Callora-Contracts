@@ -571,6 +571,20 @@ fn init_twice_panics_on_reinit() {
 }
 
 #[test]
+#[should_panic(expected = "vault is paused")]
+fn test_deduct_when_paused_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env);
+    let contract_id = env.register(CalloraVault, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    client.init(&owner, &Some(500));
+    env.mock_all_auths();
+    client.pause(&owner);
+    client.deduct(&owner, &100);
+}
+
+#[test]
 fn owner_unchanged_after_deposit_and_deduct() {
     let env = Env::default();
     let owner = Address::generate(&env);
