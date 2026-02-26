@@ -44,6 +44,7 @@ pub enum StorageKey {
     Meta,
     AllowedDepositors,
     ApiPrice(Symbol),
+    Paused,
 }
 
 #[contract]
@@ -54,10 +55,15 @@ impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance.
     /// Emits an "init" event with the owner address and initial balance.
     ///
+    /// # Security Note
+    /// The `owner` address is required to authorize the initialization transaction via `owner.require_auth()`.
+    /// This prevents unauthorized parties from initializing the vault with a "zero" or unauthenticated owner.
+    ///
     /// # Panics
     /// - If the vault is already initialized
     /// - If `initial_balance` is negative
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
+        owner.require_auth();
         if env.storage().instance().has(&StorageKey::Meta) {
             panic!("vault already initialized");
         }
@@ -157,10 +163,34 @@ impl CalloraVault {
         meta.balance
     }
 
+    /// Pause the vault. Only the owner may call this.
+    pub fn pause(env: Env, caller: Address) {
+        caller.require_auth();
+        Self::require_owner(env.clone(), caller);
+        env.storage().instance().set(&StorageKey::Paused, &true);
+    }
+
+    /// Unpause the vault. Only the owner may call this.
+    pub fn unpause(env: Env, caller: Address) {
+        caller.require_auth();
+        Self::require_owner(env.clone(), caller);
+        env.storage().instance().set(&StorageKey::Paused, &false);
+    }
+
+    /// Return whether the vault is currently paused.
+    pub fn paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&StorageKey::Paused)
+            .unwrap_or(false)
+    }
+
     /// Deduct balance for an API call. Only owner/authorized caller in production.
+    /// Panics if the vault is paused.
     pub fn deduct(env: Env, caller: Address, amount: i128) -> i128 {
         caller.require_auth();
         Self::require_owner(env.clone(), caller);
+        assert!(!Self::paused(env.clone()), "vault is paused");
 
         let mut meta = Self::get_meta(env.clone());
         assert!(amount > 0, "amount must be positive");
