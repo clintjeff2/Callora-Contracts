@@ -204,11 +204,9 @@ impl CalloraVault {
             meta.min_deposit
         );
 
-        let usdc_address: Address = env
-            .storage()
-            .instance()
+        let usdc_address: Address = env.storage().instance()
             .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
+            .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer_from(
             &env.current_contract_address(),
@@ -305,11 +303,9 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env
-            .storage()
-            .instance()
+        let usdc_address: Address = env.storage().instance()
             .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
+            .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&env.current_contract_address(), &meta.owner, &amount);
 
@@ -331,11 +327,9 @@ impl CalloraVault {
         assert!(amount > 0, "amount must be positive");
         assert!(meta.balance >= amount, "insufficient balance");
 
-        let usdc_address: Address = env
-            .storage()
-            .instance()
+        let usdc_address: Address = env.storage().instance()
             .get(&Symbol::new(&env, USDC_KEY))
-            .unwrap_or_else(|| panic!("vault not initialized"));
+            .expect("vault not initialized");
         let usdc = token::Client::new(&env, &usdc_address);
         usdc.transfer(&env.current_contract_address(), &to, &amount);
 
