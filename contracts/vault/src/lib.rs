@@ -53,10 +53,15 @@ impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance.
     /// Emits an "init" event with the owner address and initial balance.
     ///
+    /// # Security Note
+    /// The `owner` address is required to authorize the initialization transaction via `owner.require_auth()`.
+    /// This prevents unauthorized parties from initializing the vault with a "zero" or unauthenticated owner.
+    ///
     /// # Panics
     /// - If the vault is already initialized
     /// - If `initial_balance` is negative
     pub fn init(env: Env, owner: Address, initial_balance: Option<i128>) -> VaultMeta {
+        owner.require_auth();
         if env.storage().instance().has(&StorageKey::Meta) {
             panic!("vault already initialized");
         }

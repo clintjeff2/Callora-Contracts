@@ -12,6 +12,7 @@ fn init_and_balance() {
     let owner = Address::generate(&env);
     let contract_id = env.register(CalloraVault, ());
 
+    env.mock_all_auths();
     // Call init directly inside as_contract so events are captured
     let events = env.as_contract(&contract_id, || {
         CalloraVault::init(env.clone(), owner.clone(), Some(1000));
@@ -60,6 +61,7 @@ fn deposit_and_deduct() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     env.mock_all_auths();
@@ -145,6 +147,7 @@ fn allowed_depositor_can_deposit() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     // Owner sets the allowed depositor
@@ -164,6 +167,7 @@ fn unauthorized_address_cannot_deposit() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     // Try to deposit as unauthorized address (should panic)
@@ -180,6 +184,7 @@ fn owner_can_set_allowed_depositor() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     // Owner sets allowed depositor
@@ -199,6 +204,7 @@ fn owner_can_clear_allowed_depositor() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     env.mock_all_auths();
@@ -225,6 +231,7 @@ fn non_owner_cannot_set_allowed_depositor() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     // Try to set allowed depositor as non-owner (should panic)
@@ -242,6 +249,7 @@ fn deposit_after_depositor_cleared_is_rejected() {
     let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     env.mock_all_auths();
@@ -383,6 +391,7 @@ fn deduct_greater_than_balance_panics() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     client.init(&owner, &Some(100));
 
     // Mock the owner as the invoker
@@ -399,6 +408,7 @@ fn balance_unchanged_after_failed_deduct() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
+    env.mock_all_auths();
     // Initialize with balance of 100
     client.init(&owner, &Some(100));
     assert_eq!(client.balance(), 100);
@@ -572,4 +582,17 @@ fn owner_unchanged_after_deposit_and_deduct() {
     client.deposit(&owner, &50);
     client.deduct(&owner, &30);
     assert_eq!(client.get_meta().owner, owner);
+}
+
+#[test]
+#[should_panic]
+fn init_unauthorized_owner_panics() {
+    let env = Env::default();
+    let owner = Address::generate(&env); // Represents an arbitrary/zero/unset address that didn't sign
+    let contract_id = env.register(CalloraVault {}, ());
+    let client = CalloraVaultClient::new(&env, &contract_id);
+
+    // Call init without mocking authorization for `owner`.
+    // It should panic at `owner.require_auth()`, preventing unauthorized or zero-address initialization.
+    client.init(&owner, &Some(100));
 }
