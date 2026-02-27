@@ -1,16 +1,20 @@
 [workspace]
 resolver = "2"
-members = ["contracts/vault"]
+members = ["contracts/vault", "contracts/revenue_pool"]
 
 [workspace.dependencies]
 soroban-sdk = "22"
 
-[profile.release]
-opt-level = "z"
+[profile.dev]
 overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
-lto = true
+
+[profile.release]
+# Size optimization settings to keep WASM under Soroban's 64KB limit
+opt-level = "z"           # Optimize for size (more aggressive than "s")
+overflow-checks = true    # Keep overflow checks for safety
+debug = 0                 # No debug info
+strip = "symbols"         # Remove symbol table and debug info
+debug-assertions = false  # Disable debug assertions in release
+panic = "abort"           # Smaller panic handler (no unwinding)
+codegen-units = 1         # Better optimization (slower compile, smaller binary)
+lto = true                # Link-time optimization across all crates

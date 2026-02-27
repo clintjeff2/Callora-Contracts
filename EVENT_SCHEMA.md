@@ -34,7 +34,8 @@ Emitted on each deduction: single `deduct(amount)` or each item in `batch_deduct
 | Field   | Location | Type   | Description   |
 |---------|----------|--------|---------------|
 | topic 0 | topics   | Symbol | `"deduct"`    |
-| topic 1 | topics   | Symbol | optional request_id (empty symbol if none) |
+| topic 1 | topics   | Address| caller        |
+| topic 2 | topics   | Symbol | optional request_id (empty symbol if none) |
 | data    | data     | (i128, i128) | (amount, new_balance) |
 
 ---
@@ -61,6 +62,32 @@ Emitted when the owner withdraws to a designated address via `withdraw_to(to, am
 | topic 1 | topics   | Address| vault owner   |
 | topic 2 | topics   | Address| recipient `to` |
 | data    | data     | (i128, i128) | (amount, new_balance) |
+
+---
+
+### `metadata_set`
+
+Emitted when metadata is set for an offering via `set_metadata(offering_id, metadata)`.
+
+| Field   | Location | Type   | Description   |
+|---------|----------|--------|---------------|
+| topic 0 | topics   | Symbol | `"metadata_set"` |
+| topic 1 | topics   | String | offering_id   |
+| topic 2 | topics   | Address| caller (owner/issuer) |
+| data    | data     | String | metadata (IPFS CID or URI) |
+
+---
+
+### `metadata_updated`
+
+Emitted when existing metadata is updated via `update_metadata(offering_id, metadata)`.
+
+| Field   | Location | Type   | Description   |
+|---------|----------|--------|---------------|
+| topic 0 | topics   | Symbol | `"metadata_updated"` |
+| topic 1 | topics   | String | offering_id   |
+| topic 2 | topics   | Address| caller (owner/issuer) |
+| data    | data     | (String, String) | (old_metadata, new_metadata) |
 
 ---
 

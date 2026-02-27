@@ -5,3 +5,7 @@ Cargo.lock
 .DS_Store
 .env
 .env.*
+/target/
+/target_local/
+.md-*
+hidden
