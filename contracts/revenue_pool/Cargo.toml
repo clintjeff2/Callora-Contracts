@@ -1,5 +1,5 @@
 [package]
-name = "callora-vault"
+name = "callora-revenue-pool"
 version = "0.0.1"
 edition = "2021"
 publish = false
@@ -13,4 +13,3 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-rand = "0.8"

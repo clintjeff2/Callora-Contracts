@@ -4,7 +4,7 @@ This document describes the storage layout of the Callora Vault contract, includ
 
 ## Storage Overview
 
-The Callora Vault contract uses Soroban's instance storage to persist contract state. All data is stored under a single storage key with a composite data structure.
+The Callora Vault contract uses Soroban's instance storage to persist contract state. Data is stored under a small set of typed keys defined by the `StorageKey` enum.
 
 ## Storage Keys
 
@@ -12,7 +12,30 @@ The Callora Vault contract uses Soroban's instance storage to persist contract s
 
 | Key | Type | Description | Usage |
 |-----|------|-------------|-------|
-| `Symbol("meta")` | `VaultMeta` | Primary vault metadata containing owner and balance | Core vault state |
+| `Symbol("meta")` | `VaultMeta` | Primary vault metadata (owner, balance, min_deposit) | Core vault state |
+| `Symbol("usdc")` | `Address` | USDC token contract address | Token transfers |
+| `Symbol("admin")` | `Address` | Admin (e.g. backend) for distribute | Access control |
+| `Symbol("revenue_pool")` | `Option<Address>` | Optional settlement contract; receives USDC on deduct | Deduct flow |
+| `Symbol("max_deduct")` | `i128` | Maximum amount per single deduct (configurable at init) | Deduct limit |
+| `StorageKey::OfferingMetadata(offering_id)` | `String` | Off-chain metadata reference (IPFS CID or URI) per offering | Offering metadata |
+The contract defines the following storage keys:
+
+```rust
+#[contracttype]
+pub enum StorageKey {
+    Meta,
+    AllowedDepositor,
+    ApiPrice(Symbol),
+}
+```
+
+They are used as follows:
+
+| Key Variant | Value Type | Description | Usage |
+|------------|-----------|-------------|-------|
+| `Meta` | `VaultMeta` | Primary vault metadata (owner, balance) | Core vault state |
+| `AllowedDepositor` | `Address` | Optional backend/admin address allowed to deposit and manage pricing | Access control |
+| `ApiPrice(Symbol(api_id))` | `i128` | Price per API call (smallest USDC units) for a given `api_id` | API pricing |
 
 ### Data Structures
 
@@ -22,39 +45,77 @@ The Callora Vault contract uses Soroban's instance storage to persist contract s
 #[contracttype]
 #[derive(Clone)]
 pub struct VaultMeta {
-    pub owner: Address,      // Vault owner address
-    pub balance: i128,       // Current balance (in smallest units, e.g., USDC cents)
-    pub min_deposit: i128,   // Minimum amount per deposit; 0 means no minimum
+    pub owner: Address,
+    pub balance: i128,
 }
 ```
 
 **Fields:**
 - `owner`: `Address` - The address that owns the vault and can perform operations
 - `balance`: `i128` - Current vault balance, can be positive or zero
-- `min_deposit`: `i128` - Minimum amount required per deposit; deposits below this panic (0 = no minimum)
 
 ## Storage Operations
 
 ### Write Operations
-- `init()`: Creates initial `VaultMeta` and stores under `"meta"` key
-- `deposit()`: Reads `VaultMeta`, updates balance, writes back
-- `deduct()`: Reads `VaultMeta`, validates balance, updates, writes back
+- `init()`: Creates initial `VaultMeta` and stores under `StorageKey::Meta`
+- `set_allowed_depositor()`: Sets or clears `StorageKey::AllowedDepositor`
+- `deposit()`: Reads `VaultMeta`, updates balance, writes back under `StorageKey::Meta`
+- `deduct()`: Reads `VaultMeta`, validates balance, updates, writes back under `StorageKey::Meta`
+- `set_price()`: Writes the price for a given `api_id` under `StorageKey::ApiPrice(api_id)`
 
 ### Read Operations
-- `get_meta()`: Reads and returns `VaultMeta`
+- `get_meta()`: Reads and returns `VaultMeta` from `StorageKey::Meta`
 - `balance()`: Reads `VaultMeta` and returns balance field
+- `get_price()`: Reads and returns the price for a given `api_id` from `StorageKey::ApiPrice(api_id)` (or `None` if unset)
 
 ## Storage Layout Visualization
 
 ```
 Instance Storage
-└── Symbol("meta")
-    └── VaultMeta
-        ├── owner: Address
-        └── balance: i128
+├── Symbol("meta")
+│   └── VaultMeta
+│       ├── owner: Address
+│       └── balance: i128
+├── Symbol("AllowedDepositor")
+│   └── Option<Address>
+└── StorageKey::OfferingMetadata(offering_id: String)
+    └── String (IPFS CID or URI, max 256 chars)
+├── StorageKey::Meta
+│   └── VaultMeta
+│       ├── owner: Address
+│       └── balance: i128
+├── StorageKey::AllowedDepositor
+│   └── Address (optional key; present only when set)
+└── StorageKey::ApiPrice(Symbol(api_id))
+    └── i128 (price per call in smallest USDC units)
 ```
 
 ## Upgrade Implications
+
+### Offering Metadata Storage
+
+The contract supports per-offering metadata storage, allowing issuers to attach off-chain references (IPFS CIDs or HTTPS URIs) to individual offerings.
+
+**Storage Pattern:**
+- Each offering's metadata is stored under a unique key: `StorageKey::OfferingMetadata(offering_id)`
+- Metadata is a string with a maximum length of 256 characters
+- Multiple offerings can have independent metadata entries
+
+**Access Control:**
+- Only the vault owner (issuer) can set or update metadata
+- Metadata operations emit events for indexing and tracking
+
+**Off-chain Usage Pattern:**
+Clients should:
+1. Call `get_metadata(offering_id)` to retrieve the reference
+2. If IPFS CID: Fetch from IPFS gateway (e.g., `https://ipfs.io/ipfs/{CID}`)
+3. If HTTPS URI: Fetch directly via HTTP GET
+4. Parse the JSON metadata (expected fields: name, description, image, attributes, etc.)
+
+**Storage Constraints:**
+- Maximum metadata length: 256 characters (sufficient for IPFS CIDv0/v1 and reasonable URIs)
+- Empty strings are allowed (can be used to clear metadata semantically)
+- Oversized input is rejected with a panic
 
 ### Current Layout Considerations
 - **Single Key Design**: All vault state is consolidated under one storage key, simplifying migrations
