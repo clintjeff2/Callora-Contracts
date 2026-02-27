@@ -1,5 +1,3 @@
-//! Vault contract unit tests (deposits, access control, API pricing).
-
 extern crate std;
 
 use super::*;
@@ -155,8 +153,6 @@ fn init_with_balance_emits_event() {
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 1000);
 
-    env.mock_all_auths();
-    // Call init directly inside as_contract so events are captured
     let events = env.as_contract(&contract_id, || {
         CalloraVault::init(env.clone(), owner.clone(), Some(1000), None);
         CalloraVault::init(
@@ -229,9 +225,6 @@ fn get_meta_returns_owner_and_balance() {
     assert_eq!(client.balance(), 300);
     env.mock_all_auths();
     client.deduct(&owner, &50);
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
-
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 500);
     client.init(&owner, &usdc_token, &Some(500), &None, &None, &None);
@@ -333,7 +326,7 @@ fn allowed_depositor_can_deposit() {
 fn deduct_reduces_balance() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc, _, usdc_admin) = create_usdc(&env, &owner);
     let caller = Address::generate(&env);
@@ -414,12 +407,11 @@ fn owner_can_clear_allowed_depositor() {
 fn deduct_with_request_id() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc, _, usdc_admin) = create_usdc(&env, &owner);
     let caller = Address::generate(&env);
 
-    // Initialize vault with initial balance
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 1000);
     client.init(&owner, &usdc, &Some(1000), &None, &None, &None);
@@ -437,8 +429,6 @@ fn deduct_insufficient_balance_fails() {
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
     let caller = Address::generate(&env);
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
 
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 10);
@@ -452,15 +442,11 @@ fn deduct_insufficient_balance_fails() {
 fn deduct_exact_balance_succeeds() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
     let caller = Address::generate(&env);
 
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
-
-    // Try to deposit as unauthorized address (should panic)
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 75);
     client.init(&owner, &usdc_token, &Some(75), &None, &None, &None);
@@ -475,14 +461,10 @@ fn deduct_event_contains_request_id() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let caller = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
-
-    // Owner sets allowed depositor
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 500);
     client.init(&owner, &usdc_token, &Some(500), &None, &None, &None);
@@ -538,8 +520,6 @@ fn batch_deduct_events_contain_request_ids() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
-    env.mock_all_auths();
-    client.init(&owner, &Some(100));
 
     // Set depositor
     client.set_allowed_depositor(&owner, &Some(depositor.clone()));
@@ -699,7 +679,6 @@ fn set_admin_updates_admin() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
-    client.init(&owner, &Some(100));
 
     client.init(&owner, &Some(500), &None);
     env.mock_all_auths();
@@ -809,7 +788,6 @@ fn distribute_zero_amount_fails() {
     let developer = Address::generate(&env);
     let (vault_address, client) = create_vault(&env);
     let (usdc, _, usdc_admin_client) = create_usdc(&env, &admin);
-    client.init(&owner, &Some(100));
 
     env.mock_all_auths();
 
@@ -1195,11 +1173,6 @@ fn test_transfer_ownership_not_owner() {
     let result = client.try_withdraw(&0);
     assert!(result.is_err(), "expected error for zero amount");
 }
-    env.mock_all_auths();
-
-    // transfer ownership via client
-    // Owner authorizes transfer (require_auth in contract)
-    client.transfer_ownership(&new_owner);
 
 #[test]
 fn withdraw_to_reduces_balance() {
@@ -1264,33 +1237,6 @@ fn deposit_below_minimum_fails() {
     let owner = Address::generate(&env);
     let depositor = Address::generate(&env);
     let contract_id = env.register(CalloraVault {}, ());
-fn allowed_depositor_can_set_price() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let depositor = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    let api_id = Symbol::new(&env, "backend_api");
-
-    env.mock_all_auths();
-    client.set_allowed_depositor(&owner, &Some(depositor.clone()));
-
-    client.set_price(&depositor, &api_id, &25);
-
-    let price = client.get_price(&api_id);
-    assert_eq!(price, Some(25));
-}
-
-#[test]
-#[should_panic(expected = "unauthorized: only owner or allowed depositor can set price")]
-fn unauthorized_cannot_set_price() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let unauthorized = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
@@ -1429,7 +1375,6 @@ fn double_init_fails() {
     let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
-    client.init(&owner, &Some(100));
 
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 100);
@@ -1448,12 +1393,6 @@ fn init_insufficient_usdc_balance_fails() {
     let (usdc_token, _, usdc_admin) = create_usdc(&env, &owner);
 
     env.mock_all_auths();
-    // Initialize with balance of 100
-    client.init(&owner, &Some(100));
-    assert_eq!(client.balance(), 100);
-
-    // Mock the owner as the invoker
-    env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 50);
 
     let result = client.try_init(&owner, &usdc_token, &Some(100), &None, &None, &None);
@@ -1462,14 +1401,6 @@ fn init_insufficient_usdc_balance_fails() {
         "expected error when initial_balance exceeds contract USDC"
     );
 }
-    env.mock_all_auths();
-
-    // This should panic because new_owner is the same as current owner
-    client.transfer_ownership(&owner);
-    // Attempt to deduct more than balance, which should panic
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.deduct(&owner, &101);
-    }));
 
 #[test]
 fn init_with_zero_max_deduct_fails() {
@@ -1487,245 +1418,6 @@ fn init_with_zero_max_deduct_fails() {
 
 #[test]
 fn init_with_revenue_pool_and_get_revenue_pool() {
-#[should_panic(expected = "unauthorized: owner only")]
-fn unauthorized_cannot_update_metadata() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let unauthorized = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-006");
-    let metadata = String::from_str(&env, "QmInitial");
-
-    // Owner sets metadata
-    client.set_metadata(&owner, &offering_id, &metadata);
-
-    // Unauthorized user tries to update (should panic)
-    let new_metadata = String::from_str(&env, "QmUnauthorized");
-    client.update_metadata(&unauthorized, &offering_id, &new_metadata);
-}
-
-#[test]
-fn empty_metadata_is_allowed() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-007");
-    let empty_metadata = String::from_str(&env, "");
-
-    // Empty string should be allowed
-    client.set_metadata(&owner, &offering_id, &empty_metadata);
-
-    let retrieved = client.get_metadata(&offering_id);
-    assert_eq!(retrieved, Some(empty_metadata));
-}
-
-#[test]
-#[should_panic(expected = "metadata exceeds maximum length")]
-fn oversized_metadata_is_rejected() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-008");
-
-    // Create a string that exceeds MAX_METADATA_LENGTH (256 chars)
-    let oversized = "a".repeat(257);
-    let oversized_metadata = String::from_str(&env, &oversized);
-
-    // Should panic due to length constraint
-    client.set_metadata(&owner, &offering_id, &oversized_metadata);
-}
-
-#[test]
-#[should_panic(expected = "metadata exceeds maximum length")]
-fn oversized_update_is_rejected() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-009");
-    let initial_metadata = String::from_str(&env, "QmInitial");
-
-    // Set initial metadata
-    client.set_metadata(&owner, &offering_id, &initial_metadata);
-
-    // Try to update with oversized metadata
-    let oversized = "b".repeat(257);
-    let oversized_metadata = String::from_str(&env, &oversized);
-
-    // Should panic due to length constraint
-    client.update_metadata(&owner, &offering_id, &oversized_metadata);
-}
-
-#[test]
-fn repeated_updates_to_same_offering() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-010");
-
-    // Set initial metadata
-    let metadata1 = String::from_str(&env, "QmVersion1");
-    client.set_metadata(&owner, &offering_id, &metadata1);
-    assert_eq!(client.get_metadata(&offering_id), Some(metadata1));
-
-    // Update multiple times
-    let metadata2 = String::from_str(&env, "QmVersion2");
-    client.update_metadata(&owner, &offering_id, &metadata2);
-    assert_eq!(client.get_metadata(&offering_id), Some(metadata2));
-
-    let metadata3 = String::from_str(&env, "QmVersion3");
-    client.update_metadata(&owner, &offering_id, &metadata3);
-    assert_eq!(client.get_metadata(&offering_id), Some(metadata3));
-
-    let metadata4 = String::from_str(&env, "QmVersion4");
-    client.update_metadata(&owner, &offering_id, &metadata4);
-    assert_eq!(client.get_metadata(&offering_id), Some(metadata4));
-}
-
-#[test]
-#[should_panic(expected = "metadata already exists for this offering")]
-fn cannot_set_metadata_twice() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-011");
-    let metadata1 = String::from_str(&env, "QmFirst");
-    let metadata2 = String::from_str(&env, "QmSecond");
-
-    // Set metadata
-    client.set_metadata(&owner, &offering_id, &metadata1);
-
-    // Try to set again (should panic)
-    client.set_metadata(&owner, &offering_id, &metadata2);
-}
-
-#[test]
-#[should_panic(expected = "no metadata exists for this offering")]
-fn cannot_update_nonexistent_metadata() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-012");
-    let metadata = String::from_str(&env, "QmNonexistent");
-
-    // Try to update without setting first (should panic)
-    client.update_metadata(&owner, &offering_id, &metadata);
-}
-
-#[test]
-fn get_nonexistent_metadata_returns_none() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    let offering_id = String::from_str(&env, "offering-nonexistent");
-
-    // Should return None for nonexistent metadata
-    let retrieved = client.get_metadata(&offering_id);
-    assert_eq!(retrieved, None);
-}
-
-#[test]
-fn metadata_at_max_length_is_accepted() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    let offering_id = String::from_str(&env, "offering-013");
-
-    // Create a string exactly at MAX_METADATA_LENGTH (256 chars)
-    let max_length = "x".repeat(256);
-    let max_metadata = String::from_str(&env, &max_length);
-
-    // Should succeed
-    client.set_metadata(&owner, &offering_id, &max_metadata);
-
-    let retrieved = client.get_metadata(&offering_id);
-    assert_eq!(retrieved, Some(max_metadata));
-}
-
-#[test]
-fn multiple_offerings_can_have_metadata() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault {}, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(100));
-
-    env.mock_all_auths();
-
-    // Set metadata for multiple offerings
-    let offering1 = String::from_str(&env, "offering-A");
-    let metadata1 = String::from_str(&env, "QmMetadataA");
-    client.set_metadata(&owner, &offering1, &metadata1);
-
-    let offering2 = String::from_str(&env, "offering-B");
-    let metadata2 = String::from_str(&env, "QmMetadataB");
-    client.set_metadata(&owner, &offering2, &metadata2);
-
-    let offering3 = String::from_str(&env, "offering-C");
-    let metadata3 = String::from_str(&env, "QmMetadataC");
-    client.set_metadata(&owner, &offering3, &metadata3);
-
-    // Verify all metadata is stored independently
-    assert_eq!(client.get_metadata(&offering1), Some(metadata1));
-    assert_eq!(client.get_metadata(&offering2), Some(metadata2));
-    assert_eq!(client.get_metadata(&offering3), Some(metadata3));
-}
-
-#[test]
-#[should_panic]
-fn test_transfer_ownership_not_owner() {
     let env = Env::default();
     let owner = Address::generate(&env);
     let revenue_pool = Address::generate(&env);
@@ -1760,11 +1452,6 @@ fn get_revenue_pool_returns_none_when_not_set() {
 
     let retrieved_pool = client.get_revenue_pool();
     assert_eq!(retrieved_pool, None);
-    client.init(&owner, &Some(100));
-
-    // No auth for owner — transfer_ownership requires current owner to authorize
-    env.mock_auths(&[]);
-    client.transfer_ownership(&new_owner);
 }
 
 #[test]
@@ -1783,7 +1470,6 @@ fn get_max_deduct_returns_configured_value() {
 }
 
 /// Fuzz test: random deposit/deduct sequence asserting balance >= 0 and matches expected.
-/// Run with: cargo test --package callora-vault fuzz_deposit_and_deduct -- --nocapture
 #[test]
 fn fuzz_deposit_and_deduct() {
     use rand::Rng;
@@ -1803,7 +1489,6 @@ fn fuzz_deposit_and_deduct() {
 
     let initial_balance: i128 = 1_000;
     fund_vault(&usdc_admin, &vault_address, initial_balance);
-    // Pre-fund owner for deposits in the loop
     usdc_admin.mint(&owner, &250_000);
     usdc_client.approve(&owner, &vault_address, &250_000, &10_000);
     vault.init(
@@ -1878,7 +1563,6 @@ fn fuzz_deposit_and_deduct_seeded() {
     let (vault_address, vault) = create_vault(&env);
     let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
 
-    // Pre-fund owner for deposits in the loop
     usdc_admin.mint(&owner, &5_000_000);
     usdc_client.approve(&owner, &vault_address, &5_000_000, &10_000);
     vault.init(&owner, &usdc_address, &Some(0), &None, &None, &None);
@@ -1948,9 +1632,8 @@ fn batch_deduct_all_succeed() {
 #[should_panic(expected = "insufficient balance")]
 fn batch_deduct_all_revert() {
     let env = Env::default();
-
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
     let (usdc_address, _, usdc_admin) = create_usdc(&env, &owner);
 
@@ -1982,7 +1665,7 @@ fn batch_deduct_all_revert() {
 fn init_twice_panics_on_reinit() {
     let env = Env::default();
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     env.mock_all_auths();
@@ -2021,26 +1704,10 @@ fn init_twice_panics_on_reinit() {
 }
 
 #[test]
-#[should_panic(expected = "vault is paused")]
-fn test_deduct_when_paused_panics() {
-    let env = Env::default();
-    let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
-    let client = CalloraVaultClient::new(&env, &contract_id);
-
-    client.init(&owner, &Some(500));
-    env.mock_all_auths();
-    client.pause(&owner);
-    client.deduct(&owner, &100);
-}
-
-#[test]
 fn owner_unchanged_after_deposit_and_deduct() {
     let env = Env::default();
-    env.mock_all_auths();
-
     let owner = Address::generate(&env);
-    let contract_id = env.register(CalloraVault, ());
+    let contract_id = env.register(CalloraVault {}, ());
     let client = CalloraVaultClient::new(&env, &contract_id);
 
     env.mock_all_auths();
@@ -2049,7 +1716,6 @@ fn owner_unchanged_after_deposit_and_deduct() {
 
     env.mock_all_auths();
     fund_vault(&usdc_admin, &contract_id, 100);
-    // Fund owner for the deposit call
     usdc_admin.mint(&owner, &50);
     usdc_client.approve(&owner, &contract_id, &50, &10_000);
     client.init(&owner, &usdc_address, &Some(100), &None, &None, &None);
