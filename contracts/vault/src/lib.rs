@@ -17,6 +17,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol, Ve
 pub struct VaultMeta {
     pub owner: Address,
     pub balance: i128,
+    pub authorized_caller: Option<Address>,
     /// Minimum amount required per deposit; deposits below this panic.
     pub min_deposit: i128,
 }
@@ -62,6 +63,12 @@ impl CalloraVault {
     /// Initialize vault for an owner with optional initial balance and minimum deposit.
     /// If initial_balance > 0, the contract must already hold at least that much USDC (e.g. deployer transferred in first).
     /// Emits an "init" event with the owner address and initial balance.
+    pub fn init(
+        env: Env,
+        owner: Address,
+        initial_balance: Option<i128>,
+        authorized_caller: Option<Address>,
+    ) -> VaultMeta {
     ///
     /// # Arguments
     /// * `revenue_pool` – Optional address to receive USDC on each deduct (e.g. settlement contract). If None, USDC stays in vault.
@@ -105,6 +112,7 @@ impl CalloraVault {
         let meta = VaultMeta {
             owner: owner.clone(),
             balance,
+            authorized_caller,
             min_deposit: min_deposit_val,
         };
         // Persist metadata under both the literal key and the constant for safety.
@@ -225,6 +233,25 @@ impl CalloraVault {
             .unwrap_or_else(|| panic!("vault not initialized"))
     }
 
+    /// Set or update the authorized caller for deduction. Only callable by the vault owner.
+    pub fn set_authorized_caller(env: Env, caller: Address) {
+        let mut meta = Self::get_meta(env.clone());
+        meta.owner.require_auth();
+
+        meta.authorized_caller = Some(caller.clone());
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "meta"), &meta);
+
+        env.events().publish(
+            (Symbol::new(&env, "set_auth_caller"), meta.owner.clone()),
+            caller,
+        );
+    }
+
+    /// Deposit increases balance. Callable by owner or designated depositor.
+    /// Emits a "deposit" event with amount and new balance.
+    pub fn deposit(env: Env, amount: i128) -> i128 {
     /// Deposit: user transfers USDC to the contract; contract increases internal balance.
     /// Caller must have authorized the transfer (token transfer_from). Supports multiple depositors.
     /// Emits a "deposit" event with the depositor address and amount.
@@ -262,6 +289,9 @@ impl CalloraVault {
         meta.balance
     }
 
+    /// Deduct balance for an API call. Only authorized caller or owner.
+    /// Emits a "deduct" event with amount and new balance.
+    pub fn deduct(env: Env, caller: Address, amount: i128) -> i128 {
     /// Deduct balance for an API call. Callable by authorized caller (e.g. backend).
     /// Amount must not exceed max single deduct (see init / get_max_deduct).
     /// If revenue pool is set, USDC is transferred to it; otherwise it remains in the vault.
@@ -301,6 +331,17 @@ impl CalloraVault {
         assert!(!Self::paused(env.clone()), "vault is paused");
 
         let mut meta = Self::get_meta(env.clone());
+
+        // Ensure the caller corresponds to the address signing the transaction.
+        caller.require_auth();
+
+        // Check authorization: must be either the authorized_caller if set, or the owner.
+        let authorized = match &meta.authorized_caller {
+            Some(auth_caller) => caller == *auth_caller || caller == meta.owner,
+            None => caller == meta.owner,
+        };
+        assert!(authorized, "unauthorized caller");
+
         assert!(meta.balance >= amount, "insufficient balance");
 
         meta.balance -= amount;
@@ -320,6 +361,9 @@ impl CalloraVault {
     }
 
     /// Batch deduct: multiple (amount, optional request_id) in one transaction.
+    /// Reverts the entire batch if any single deduct would exceed balance.
+    /// Emits one "deduct" event per item (same shape as single deduct).
+    pub fn batch_deduct(env: Env, caller: Address, items: Vec<DeductItem>) -> i128 {
     /// Each amount must not exceed max_deduct. Reverts entire batch if any check fails.
     /// If revenue pool is set, total deducted USDC is transferred to it once.
     /// Emits one "deduct" event per item.
@@ -327,6 +371,17 @@ impl CalloraVault {
         caller.require_auth();
         let max_deduct = Self::get_max_deduct(env.clone());
         let mut meta = Self::get_meta(env.clone());
+
+        // Ensure the caller corresponds to the address signing the transaction.
+        caller.require_auth();
+
+        // Check authorization: must be either the authorized_caller if set, or the owner.
+        let authorized = match &meta.authorized_caller {
+            Some(auth_caller) => caller == *auth_caller || caller == meta.owner,
+            None => caller == meta.owner,
+        };
+        assert!(authorized, "unauthorized caller");
+
         let n = items.len();
         assert!(n > 0, "batch_deduct requires at least one item");
 
