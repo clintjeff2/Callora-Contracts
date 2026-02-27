@@ -1958,3 +1958,48 @@ fn set_authorized_caller_owner_only() {
     let meta = client.get_meta();
     assert_eq!(meta.authorized_caller, Some(new_auth));
 }
+
+/// Verifies that balance remains correct after multiple deposits and deducts
+/// performed in sequence. Each step asserts the intermediate balance to ensure
+/// cumulative state correctness — i.e., no operation silently corrupts the
+/// running total.
+#[test]
+fn multiple_deposits_and_deducts_in_sequence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let owner = Address::generate(&env);
+    let (vault_address, vault) = create_vault(&env);
+    let (usdc_address, usdc_client, usdc_admin) = create_usdc(&env, &owner);
+
+    // Init with zero balance
+    vault.init(&owner, &usdc_address, &Some(0), &None, &None, &None);
+    fund_user(&usdc_admin, &owner, 60);
+    approve_spend(&env, &usdc_client, &owner, &vault_address, 60);
+    assert_eq!(vault.balance(), 0);
+
+    // Deposit 10 → balance should be 10
+    vault.deposit(&owner, &10);
+    assert_eq!(vault.balance(), 10);
+
+    // Deposit 20 → balance should be 30
+    vault.deposit(&owner, &20);
+    assert_eq!(vault.balance(), 30);
+
+    // Deposit 30 → balance should be 60
+    vault.deposit(&owner, &30);
+    assert_eq!(vault.balance(), 60);
+
+    // Deduct 5 → balance should be 55
+    vault.deduct(&owner, &5, &None);
+    assert_eq!(vault.balance(), 55);
+
+    // Deduct 15 → balance should be 40
+    vault.deduct(&owner, &15, &None);
+    assert_eq!(vault.balance(), 40);
+
+    // Confirm meta is also consistent at the end
+    let meta = vault.get_meta();
+    assert_eq!(meta.balance, 40);
+    assert_eq!(meta.owner, owner);
+}
