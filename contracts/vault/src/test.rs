@@ -2003,3 +2003,18 @@ fn multiple_deposits_and_deducts_in_sequence() {
     assert_eq!(meta.balance, 40);
     assert_eq!(meta.owner, owner);
 }
+
+/// Verifies that calling get_meta before init panics with "vault not initialized".
+/// This ensures the contract cannot be read in an uninitialized state,
+/// protecting against accidental use of a misconfigured vault.
+#[test]
+#[should_panic(expected = "vault not initialized")]
+fn get_meta_before_init_panics() {
+    let env = Env::default();
+
+    // Register contract
+    let (_, vault) = create_vault(&env);
+
+    // Do not call init — calling get_meta on uninitialized vault should panic immediately
+    vault.get_meta();
+}
